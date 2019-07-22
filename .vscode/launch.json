@@ -3,13 +3,22 @@
     // Zeigen Sie auf vorhandene Attribute, um die zugehörigen Beschreibungen anzuzeigen.
     // Weitere Informationen finden Sie unter https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
+    "cwd": "${workspaceRoot}",
     "configurations": [
         {
-            "name": "Python: Aktuelle Datei",
+            "name": "Train Memory Task",
             "type": "python",
             "request": "launch",
-            "program": "${file}",
+            "program": "${workspaceRoot}/src/memory_task.py",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Test Memory Task",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceRoot}/src/memory_task.py",
+            "console": "integratedTerminal",
+            "args": ["--model_path", "${workspaceRoot}/models/load/LSTM_BPTT.pth"]
         }
     ]
 }

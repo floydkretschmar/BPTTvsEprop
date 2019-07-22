@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 import numpy as np
+import argparse
 
 import memory_config as conf
 from lstm import MemoryLSTM
@@ -37,7 +38,7 @@ def train(model, loss_function, optimizer, train_X, train_Y):
     training_results = []
 
     print('######################### TRAINING #########################')
-    for epoch in range(conf.NUM_EPOCHS): 
+    for epoch in range(1, conf.NUM_EPOCHS + 1): 
         permutation = torch.randperm(train_X.size()[0])
 
         total_loss = 0
@@ -71,37 +72,39 @@ def train(model, loss_function, optimizer, train_X, train_Y):
             file.write("{}\n".format(result))
 
 
-def test(model, loss_function, test_X, test_Y):
+def test(model, loss_function, size_test_data, sequence_length):
     print('######################### TESTING #########################')
     with torch.no_grad():
-        prediction = model(test_X)
-        loss = loss_function(prediction, test_Y.squeeze())
-        print('Loss: {}'.format(loss))
-        print('GT', test_Y)
-        print('Predictions (Post-training)', np.argmax(prediction))
+        for delta in range(1, sequence_length):
+            test_X, test_Y = generate_data(size_test_data, conf.NUM_CLASSES, sequence_length, delta)
+            prediction = model(test_X)
+            loss = loss_function(prediction, test_Y.squeeze())
+            print('Loss for delta {}: {}'.format(delta, loss))
 
 
-def main(size_train_data, size_test_data):
+def main(size_train_data, size_test_data, model_path):
     # generate data sets
     train_X, train_Y = generate_data(size_train_data, conf.NUM_CLASSES, conf.SEQ_LENGTH)
-    test_X, test_Y = generate_data(size_train_data, conf.NUM_CLASSES, conf.SEQ_LENGTH, time_delta=conf.SEQ_MIN_DELTA)
 
     # the default LSTM implementation with bptt
     model = MemoryLSTM(conf.INPUT_SIZE, conf.HIDEN_SIZE, conf.NUM_CLASSES).to(DEVICE)
+
+    if model_path:
+        model.load(model_path)
 
     # Use negative log-likelihood and ADAM
     optimizer = optim.Adam(model.parameters(), lr=0.01)
     loss_function = nn.NLLLoss()
 
-    # See what the predictions are before training: output = neg_softmax of classes 1 to num_classes
-    with torch.no_grad():
-        predicition = model(test_X[0].view(1, -1))
-        print('GT', test_Y[0])
-        print('Predictions (Pre-training)', predicition)
+    if not model_path:
+        train(model, loss_function, optimizer, train_X, train_Y)
 
-    train(model, loss_function, optimizer, train_X, train_Y)
-    test(model, loss_function, test_X, test_Y)
+    test(model, loss_function, size_test_data, conf.SEQ_LENGTH)
 
 
 if __name__ == '__main__':
-    main(conf.TRAIN_SIZE, conf.TEST_SIZE)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model_path', type=str, required=False)
+    args = parser.parse_args()
+
+    main(conf.TRAIN_SIZE, conf.TEST_SIZE, args.model_path)

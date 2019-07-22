@@ -24,5 +24,5 @@ class MemoryLSTM(nn.Module):
         torch.save(self.state_dict(), '{}{}{}.pth'.format(path, self.descriptor, iteration, '.pth'))
 
     def load(self, path):
-        self.load_state_dict(torch.load('{}{}{}.pth'.format(path, self.descriptor, '.pth')))
+        self.load_state_dict(torch.load(path))
         self.eval()
