@@ -2,6 +2,6 @@
     "python.linting.pylintEnabled": false,
     "python.linting.enabled": true,
     "python.pythonPath": "C:\\Anaconda\\envs\\python36\\python.exe",
-    "python.linting.flake8Enabled": false,
-    "python.linting.pylamaEnabled": true
+    "python.linting.flake8Enabled": true,
+    "python.linting.pylamaEnabled": false
 }

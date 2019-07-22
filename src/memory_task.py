@@ -1,15 +1,14 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 
 import numpy as np
-import argparse
 
 import memory_config as conf
 from lstm import MemoryLSTM
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 def generate_data(num_obervations, num_classes, sequence_length, time_delta=None):
     '''
@@ -32,10 +31,8 @@ def generate_data(num_obervations, num_classes, sequence_length, time_delta=None
 
     return torch.from_numpy(data).float().to(DEVICE), torch.from_numpy(labels).long().to(DEVICE)
 
-def train(model, train_X, train_Y):
-    # Use negative log-likelihood and ADAM
-    loss_function = nn.NLLLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
+
+def train(model, loss_function, optimizer, train_X, train_Y):
 
     training_results = []
 
@@ -50,11 +47,11 @@ def train(model, train_X, train_Y):
             optimizer.zero_grad()
 
             # Get mini-batch of sequences
-            indices = permutation[i:i+conf.BATCH_SIZE]
+            indices = permutation[i:i + conf.BATCH_SIZE]
             batch_x, batch_y = train_X[indices], train_Y[indices]
 
             prediction = model(batch_x)
-
+            
             # Compute the loss, gradients, and update the parameters
             loss = loss_function(prediction, batch_y.squeeze())
             loss.backward()
@@ -63,7 +60,7 @@ def train(model, train_X, train_Y):
             total_loss += loss.item()
             batch_num += 1
 
-        training_results.append('Epoch {} \t => Loss: {}'.format(epoch, total_loss/batch_num))
+        training_results.append('Epoch {} \t => Loss: {}'.format(epoch, total_loss / batch_num))
         print(training_results[-1])
 
         if epoch % 50 == 0:
@@ -73,14 +70,16 @@ def train(model, train_X, train_Y):
         for result in training_results:
             file.write("{}\n".format(result))
 
-def test(model, test_X, test_Y):
+
+def test(model, loss_function, test_X, test_Y):
     print('######################### TESTING #########################')
     with torch.no_grad():
         prediction = model(test_X)
         loss = loss_function(prediction, test_Y.squeeze())
-        print('Loss: {}'.format(total_loss/len(test_Y)))
+        print('Loss: {}'.format(loss))
         print('GT', test_Y)
         print('Predictions (Post-training)', np.argmax(prediction))
+
 
 def main(size_train_data, size_test_data):
     # generate data sets
@@ -90,14 +89,19 @@ def main(size_train_data, size_test_data):
     # the default LSTM implementation with bptt
     model = MemoryLSTM(conf.INPUT_SIZE, conf.HIDEN_SIZE, conf.NUM_CLASSES).to(DEVICE)
 
+    # Use negative log-likelihood and ADAM
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    loss_function = nn.NLLLoss()
+
     # See what the predictions are before training: output = neg_softmax of classes 1 to num_classes
     with torch.no_grad():
         predicition = model(test_X[0].view(1, -1))
         print('GT', test_Y[0])
         print('Predictions (Pre-training)', predicition)
 
-    train(model, train_X, train_Y)
-    test(model, test_X, test_Y)
-    
+    train(model, loss_function, optimizer, train_X, train_Y)
+    test(model, loss_function, test_X, test_Y)
+
+
 if __name__ == '__main__':
     main(conf.TRAIN_SIZE, conf.TEST_SIZE)
