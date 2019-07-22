@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import time
 
 
 class LearningTask:
@@ -33,6 +34,7 @@ class LearningTask:
 
         print('######################### TRAINING #########################')
         for epoch in range(1, self.num_epochs + 1):
+            start_time = time.time()
             total_loss = 0
             batch_num = 0
 
@@ -49,7 +51,7 @@ class LearningTask:
                 total_loss += loss.item()
                 batch_num += 1
 
-            training_results.append('Epoch {} \t => Loss: {}'.format(epoch, total_loss / batch_num))
+            training_results.append('Epoch {} \t => Loss: {} [Batch-Time = {}s]'.format(epoch, total_loss / batch_num, round(time.time() - start_time, 2)))
             print(training_results[-1])
 
             if epoch % 50 == 0:
