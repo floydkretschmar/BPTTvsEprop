@@ -4,7 +4,7 @@ import torch.optim as optim
 
 import argparse
 
-from lstm import MemoryLSTM, MemoryLSTMCell, Eprop1MemoryLSTM
+from lstm import MemoryLSTM
 from learning_task import MemoryTask
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -35,7 +35,7 @@ def main(args):
         SAVE_PATH,
         NUM_CLASSES)
     # the default LSTM implementation with bptt
-    model = MemoryLSTMCell(INPUT_SIZE, HIDEN_SIZE, NUM_CLASSES).to(DEVICE)
+    model = MemoryLSTM(INPUT_SIZE, HIDEN_SIZE, NUM_CLASSES).to(DEVICE)
     # model = Eprop1MemoryLSTM(INPUT_SIZE, HIDEN_SIZE, NUM_CLASSES).to(DEVICE)
 
     if args.test:
