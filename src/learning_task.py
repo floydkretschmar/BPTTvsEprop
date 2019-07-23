@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import time
 
+from util import to_device
+
 
 class LearningTask:
     def __init__(
@@ -11,9 +13,7 @@ class LearningTask:
             sequence_length, 
             num_epochs, 
             size_batch,
-            device,
             path):
-        self.device = device
         self.size_training_data = size_training_data
         self.size_test_data = size_test_data
         self.sequence_length = sequence_length
@@ -86,7 +86,6 @@ class MemoryTask(LearningTask):
             sequence_length, 
             num_epochs, 
             size_batch,
-            device,
             path,
             num_classes):
         super(MemoryTask, self).__init__(
@@ -95,7 +94,6 @@ class MemoryTask(LearningTask):
             sequence_length, 
             num_epochs, 
             size_batch,
-            device,
             path)
         self.num_classes = num_classes
 
@@ -106,7 +104,7 @@ class MemoryTask(LearningTask):
         The label of a sequence is the true class of the signal - 1, because the NLLLoss used to train 
         the network expects labels in the range between 0 and num_classes - 1 instead of 1 and num_classes.
         '''
-        size = (num_observations, self.sequence_length)
+        size = ((num_observations, self.sequence_length, 1))
         data = np.zeros(size)    
         labels = np.zeros((num_observations, 1))
         for i, row in enumerate(data):
@@ -116,7 +114,7 @@ class MemoryTask(LearningTask):
             row[column] = signal
             labels[i] = signal - 1
 
-        return torch.from_numpy(data).float().to(self.device), torch.from_numpy(labels).long().to(self.device)
+        return to_device(torch.from_numpy(data).float()), to_device(torch.from_numpy(labels).long())
 
     def generate_train_data(self):
         return self.generate_data(self.size_training_data)
