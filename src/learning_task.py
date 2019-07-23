@@ -1,4 +1,6 @@
 import torch
+import torch.nn as nn
+import torch.optim as optim
 import numpy as np
 import time
 
@@ -8,18 +10,15 @@ from util import to_device
 class LearningTask:
     def __init__(
             self,
-            size_training_data, 
-            size_test_data, 
-            sequence_length, 
             num_epochs, 
             size_batch,
-            path):
-        self.size_training_data = size_training_data
-        self.size_test_data = size_test_data
-        self.sequence_length = sequence_length
+            path,
+            loss_function):
         self.size_batch = size_batch
         self.num_epochs = num_epochs
         self.path = path
+
+        self.loss_function = loss_function
 
     def get_batched_data(self, data, labels):
         permutation = torch.randperm(data.size()[0])
@@ -27,9 +26,11 @@ class LearningTask:
             indices = permutation[i:i + self.size_batch]
             yield data[indices], labels[indices]
 
-    def train(self, model, loss_function, optimizer):
-        # Compute the loss, gradients, and update the parameters
-        train_X, train_Y = self.generate_train_data()
+    def train(self, model, size_train, sequence_length, learning_rate):
+        # Use negative log-likelihood and ADAM
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+        train_X, train_Y = self.generate_data(size_train, sequence_length)
         training_results = []
 
         print('######################### TRAINING #########################')
@@ -44,7 +45,7 @@ class LearningTask:
                 prediction = model(batch_x)
                 
                 # Compute the loss, gradients, and update the parameters
-                loss = loss_function(prediction, batch_y.squeeze())
+                loss = self.loss_function(prediction, batch_y.squeeze())
                 loss.backward()
                 optimizer.step()
                 
@@ -61,64 +62,50 @@ class LearningTask:
             for result in training_results:
                 file.write("{}\n".format(result))
 
-    def test(self, model, loss_function):
+    def test(self, model, test_data):
+        test_X, test_Y = test_data
         print('######################### TESTING #########################')
         with torch.no_grad():
-            index = 1
-            for test_X, test_Y in self.generate_test_data():
-                prediction = model(test_X)
-                loss = loss_function(prediction, test_Y.squeeze())
-                print('Loss for test set {}: {}'.format(index, loss))
-                index += 1
-
-    def generate_test_data():
-        pass
-
-    def generate_train_data():
-        pass
+            prediction = model(test_X)
+            loss = self.loss_function(prediction, test_Y.squeeze())
+            print('Loss: {}'.format(loss))
 
 
 class MemoryTask(LearningTask):
     def __init__(
             self,
-            size_training_data, 
-            size_test_data, 
-            sequence_length, 
             num_epochs, 
             size_batch,
             path,
             num_classes):
         super(MemoryTask, self).__init__(
-            size_training_data, 
-            size_test_data, 
-            sequence_length, 
             num_epochs, 
             size_batch,
-            path)
+            path,
+            nn.NLLLoss())
         self.num_classes = num_classes
 
-    def generate_data(self, num_observations, time_delta=None):
+    def generate_data(self, num_observations, sequence_length, time_delta=None):
         '''
         Generates the sequences of form (num_observations, sequence_length) where the entire sequence is 
         filled with 0s, except for one singular signal at a random position inside the sequence.
         The label of a sequence is the true class of the signal - 1, because the NLLLoss used to train 
         the network expects labels in the range between 0 and num_classes - 1 instead of 1 and num_classes.
         '''
-        size = ((num_observations, self.sequence_length, 1))
+        size = ((num_observations, sequence_length, 1))
         data = np.zeros(size)    
         labels = np.zeros((num_observations, 1))
         for i, row in enumerate(data):
             signal = np.random.randint(1, self.num_classes, 1)[0]
-            last_possible_signal = self.sequence_length if not time_delta else self.sequence_length - time_delta
+            last_possible_signal = sequence_length if not time_delta else sequence_length - time_delta
             column = np.random.randint(0, last_possible_signal, 1)[0]
             row[column] = signal
             labels[i] = signal - 1
 
         return to_device(torch.from_numpy(data).float()), to_device(torch.from_numpy(labels).long())
 
-    def generate_train_data(self):
-        return self.generate_data(self.size_training_data)
-
-    def generate_test_data(self):
-        for delta in range(1, self.sequence_length):
-            yield self.generate_data(self.size_test_data, delta)
+    def test_all_deltas(self, model, size_test_data, sequence_length):
+        for delta in range(1, sequence_length):
+            test_data = self.generate_data(size_test_data, sequence_length, delta)
+            print("Delta {}:".format(delta))
+            self.test(model, test_data)
