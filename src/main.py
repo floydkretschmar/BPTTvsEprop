@@ -9,9 +9,9 @@ from learning_task import MemoryTask
 from util import to_device
 
 # General Parameters #
-SEQ_LENGTH = 700
-TRAIN_SIZE = 10000
-TEST_SIZE = 5000
+SEQ_LENGTH = 500
+TRAIN_SIZE = 5000
+TEST_SIZE = 1000
 NUM_EPOCHS = 300
 BATCH_SIZE = 128
 SAVE_PATH = './models/save/'
