@@ -28,7 +28,7 @@ def main(args):
         SAVE_PATH,
         NUM_CLASSES)
     # the default LSTM implementation with bptt
-    model = to_device(MemoryLSTM(INPUT_SIZE, HIDEN_SIZE, NUM_CLASSES, batch_first=True))
+    model = to_device(MemoryLSTM(INPUT_SIZE, HIDEN_SIZE, NUM_CLASSES, cell_type=MemoryLSTM.BPTT, batch_first=True))
 
     if args.test:
         model.load(LOAD_PATH)

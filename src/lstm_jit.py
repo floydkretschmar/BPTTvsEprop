@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import math
 
 from util import to_device
+from eprop_func import EProp1
 
 
 class LSTMCell(jit.ScriptModule):
@@ -42,6 +43,12 @@ class LSTMCell(jit.ScriptModule):
             bound = 1 / math.sqrt(fan_in)
             nn.init.uniform_(bias, -bound, bound)
 
+
+class BPTTCell(LSTMCell):
+    """ 
+    Custom LSTM Cell implementation using jit adopted from:
+    https://github.com/pytorch/benchmark/blob/master/rnns/fastrnns/custom_lstms.py
+    """    
     @jit.script_method
     def forward(self, input, hx, cx):
         # net activations...
@@ -61,14 +68,48 @@ class LSTMCell(jit.ScriptModule):
         return hy, hy, cy
 
 
+class EpropCell(LSTMCell):
+    """
+    Custom LSTM Cell implementation using jit adopted from:
+    https://github.com/pytorch/benchmark/blob/master/rnns/fastrnns/custom_lstms.py
+    """
+    def __init__(self, input_size, hidden_size, bias=True):
+        super(EpropCell, self).__init__(input_size, hidden_size, bias)
+
+        # Initialize eligibility traces and forgetgate to zero
+        self.ev_w_ih_x = torch.zeros(hidden_size, 3 * input_size)
+        self.ev_w_hh_x = torch.zeros(hidden_size, 3 * input_size)
+        self.ev_b_x = torch.zeros(hidden_size, 3 * input_size)
+        self.forgetgate = torch.zeros(hidden_size, input_size)
+
+    @jit.script_method
+    def forward(self, input, hx, cx):
+        hy, cy, self.ev_w_ih_x, self.ev_w_hh_x, self.ev_b_x, self.forgetgate = EProp1.apply(
+            self.ev_w_ih_x,
+            self.ev_w_hh_x,
+            self.ev_b_x,
+            self.forgetgate,
+            input, 
+            hx, 
+            cx,
+            self.weight_ih,
+            self.weight_hh,
+            self.bias_ih,
+            self.bias_hh)
+
+        return hy, hy, cy
+
+
 class LSTM(jit.ScriptModule):
     """ 
     Custom LSTM implementation using jit adopted from:
     https://github.com/pytorch/benchmark/blob/master/rnns/fastrnns/custom_lstms.py
     """
-    def __init__(self, input_size, hidden_size, bias=True):
+    # def __init__(self, input_size, hidden_size, bias=True):
+    def __init__(self, cell, *cell_parameters):
         super(LSTM, self).__init__()
-        self.cell = LSTMCell(input_size, hidden_size, bias)
+        # self.cell = LSTMCell(input_size, hidden_size, bias)
+        self.cell = cell(*cell_parameters)
 
     @jit.script_method
     def forward(self, input, initial_h, initial_c):
@@ -88,7 +129,12 @@ class LSTM(jit.ScriptModule):
 
 
 class MemoryLSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, bias=True, batch_first=False, model_name='LSTM_BPTT'):
+    BPTT = 0
+    EPROP_1 = 1
+    EPROP_2 = 2
+    EPROP_3 = 3
+
+    def __init__(self, input_size, hidden_size, output_size, cell_type=BPTT, bias=True, batch_first=False, model_name='LSTM_BPTT'):
         super(MemoryLSTM, self).__init__()
         self.output_size = output_size
         self.hidden_size = hidden_size
@@ -97,8 +143,11 @@ class MemoryLSTM(nn.Module):
         self.batch_first = batch_first
 
         # LSTM layer
-        self.lstm = LSTM(input_size, hidden_size, bias)
-        # self.lstm = nn.LSTM(input_size, hidden_size)
+        if cell_type == MemoryLSTM.BPTT:
+            self.lstm = LSTM(BPTTCell, input_size, hidden_size, bias)
+            # self.lstm = nn.LSTM(input_size, hidden_size)
+        elif cell_type == MemoryLSTM.EPROP_1:
+            self.lstm = LSTM(EpropCell, input_size, hidden_size, bias)
 
         # LSTM to output mapping
         self.dense = nn.Linear(hidden_size, output_size, bias)

@@ -1,8 +1,6 @@
 import torch
 import torch.jit as jit
 
-from lstm_jit import LSTMCell, LSTM
-
 
 class EProp1(torch.autograd.Function):
     @staticmethod
@@ -130,45 +128,3 @@ class EProp1(torch.autograd.Function):
 
         # grad_input, grad_ev_ih, grad_ev_hh, grad_hx, grad_cx, grad_weight_ih, grad_weight_hh, grad_bias_ih, grad_bias_hh
         return None, None, None, None, None, grad_weight_ih, grad_weight_hh, grad_bias, grad_bias
-
-
-class EpropCell(LSTMCell):
-    """ 
-    Custom LSTM Cell implementation using jit adopted from:
-    https://github.com/pytorch/benchmark/blob/master/rnns/fastrnns/custom_lstms.py
-    """
-    def __init__(self, input_size, hidden_size, bias=True):
-        super(EpropCell, self).__init__(input_size, hidden_size, bias)
-
-        # Initialize eligibility traces and forgetgate to zero
-        self.ev_w_ih_x = torch.zeros(hidden_size, 3 * input_size)
-        self.ev_w_hh_x = torch.zeros(hidden_size, 3 * input_size)
-        self.ev_b_x = torch.zeros(hidden_size, 3 * input_size)
-        self.forgetgate = torch.zeros(hidden_size, input_size)
-
-    @jit.script_method
-    def forward(self, input, hx, cx):
-        hy, cy, self.ev_w_ih_x, self.ev_w_hh_x, self.ev_b_x, self.forgetgate = EProp1.apply(
-            self.ev_w_ih_x,
-            self.ev_w_hh_x,
-            self.ev_b_x,
-            self.forgetgate,
-            input, 
-            hx, 
-            cx,
-            self.weight_ih,
-            self.weight_hh,
-            self.bias_ih,
-            self.bias_hh)
-
-        return hy, hy, cy
-
-
-class EpropLSTM(LSTM):
-    """ 
-    Custom LSTM implementation using jit adopted from:
-    https://github.com/pytorch/benchmark/blob/master/rnns/fastrnns/custom_lstms.py
-    """
-    def __init__(self, input_size, hidden_size, bias=True):
-        super(LSTM, self).__init__()
-        self.cell = LSTMCell(input_size, hidden_size, bias)
