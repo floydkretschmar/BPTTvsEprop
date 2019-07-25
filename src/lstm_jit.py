@@ -8,64 +8,6 @@ import math
 from util import to_device
 
 
-class Eprop1(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input, weight, eligibility_trace, bias=None):
-        # store new eligibility trace for t+1
-        ctx.save_for_backward(input, weight, bias, eligibility_trace)
-
-        # calculate the actual weighted sum
-        output = input.mm(weight.t())
-        if bias is not None:
-            output += bias.unsqueeze(0).expand_as(output)
-
-        return output
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        input, weight, bias, eligibility_trace = ctx.saved_tensors
-        grad_input = grad_weight = grad_bias = None
-
-        # TODO: calculate gradient according to eligibility_trace and 
-        # the learning signal (=grad_output in case of eprop1)
-
-        return grad_input, grad_weight, grad_bias
-
-
-class Linear(jit.ScriptModule):
-    """ 
-    Default linear layer implementation adopted so that it can be extended to implement e-prop
-    https://pytorch.org/docs/stable/_modules/torch/nn/modules/linear.html
-    """
-    def __init__(self, in_features, out_features, bias=True):
-        super(Linear, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
-        if bias:
-            self.bias = nn.Parameter(torch.Tensor(out_features))
-        else:
-            self.register_parameter('bias', None)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
-        if self.bias is not None:
-            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
-            bound = 1 / math.sqrt(fan_in)
-            nn.init.uniform_(self.bias, -bound, bound)
-
-    @jit.script_method
-    def forward(self, input):
-        # Implement on eprop-function with forward and backward to replace F.linear
-        return F.linear(input, self.weight, self.bias)
-
-    def extra_repr(self):
-        return 'in_features={}, out_features={}, bias={}'.format(
-            self.in_features, self.out_features, self.bias is not None
-        )
-
-
 class LSTMCell(jit.ScriptModule):
     """ 
     Custom LSTM Cell implementation using jit adopted from:
@@ -77,13 +19,34 @@ class LSTMCell(jit.ScriptModule):
         self.hidden_size = hidden_size
 
         # Create for weight matrices, one for each gate + recurrent connections
-        self.input_weights = Linear(input_size, 4 * hidden_size, bias=bias)
-        self.hidden_weights = Linear(hidden_size, 4 * hidden_size, bias=bias)
+        self.weight_ih = nn.Parameter(torch.Tensor(4 * hidden_size, input_size))
+        self.weight_hh = nn.Parameter(torch.Tensor(4 * hidden_size, hidden_size))
+        if bias:
+            self.bias_ih = nn.Parameter(torch.Tensor(4 * hidden_size))
+            self.bias_hh = nn.Parameter(torch.Tensor(4 * hidden_size))
+        else:
+            self.bias_ih = None
+            self.bias_hh = None
+
+        # Initialize eligibility trace to zero
+        self.eligibility_vector_ih = torch.zeros(hidden_size, input_size)
+        self.eligibility_vector_hh = torch.zeros(hidden_size, hidden_size)
+
+        self.initialize_parameters(self.weight_ih, self.bias_ih)
+        self.initialize_parameters(self.weight_hh, self.bias_hh)
+    
+    def initialize_parameters(self, weight, bias):
+        nn.init.kaiming_uniform_(weight, a=math.sqrt(5))
+        if bias is not None:
+            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(weight)
+            bound = 1 / math.sqrt(fan_in)
+            nn.init.uniform_(bias, -bound, bound)
 
     @jit.script_method
     def forward(self, input, hx, cx):
         # net activations...
-        gates = self.input_weights(input) + self.hidden_weights(hx)
+        gates = (torch.mm(input, self.weight_ih.t()) + self.bias_ih +
+                 torch.mm(hx, self.weight_hh.t()) + self.bias_hh)
         ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
 
         # ... and gate activations
@@ -134,8 +97,8 @@ class MemoryLSTM(nn.Module):
         self.batch_first = batch_first
 
         # LSTM layer
-        # self.lstm = LSTM(input_size, hidden_size, bias)
-        self.lstm = nn.LSTM(input_size, hidden_size)
+        self.lstm = LSTM(input_size, hidden_size, bias)
+        # self.lstm = nn.LSTM(input_size, hidden_size)
 
         # LSTM to output mapping
         self.dense = nn.Linear(hidden_size, output_size, bias)
@@ -149,8 +112,8 @@ class MemoryLSTM(nn.Module):
         initial_c = to_device(torch.zeros(input.size(1), self.hidden_size))
 
         # lstm and dense pass for prediction
-        # lstm_out, _, _ = self.lstm(input, initial_h, initial_c)
-        lstm_out, _ = self.lstm(input)
+        lstm_out, _, _ = self.lstm(input, initial_h, initial_c)
+        # lstm_out, _ = self.lstm(input)
 
         # mapping to outputs
         dense_out = self.dense(lstm_out[-1, :, :])
