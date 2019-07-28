@@ -99,10 +99,8 @@ class EpropLSTM(nn.Module):
     https://github.com/pytorch/benchmark/blob/master/rnns/fastrnns/custom_lstms.py
     """
     def __init__(self, input_size, hidden_size, bias=True):
-    #def __init__(self, cell, *cell_parameters):
         super(EpropLSTM, self).__init__()
         self.cell = EpropCell(input_size, hidden_size, bias)
-        #self.cell = cell(*cell_parameters)
 
     def forward(self, input, initial_h, initial_c):
         # input (seq_len x batch_size x input_size)
@@ -115,10 +113,10 @@ class EpropLSTM(nn.Module):
         hx = initial_h
         cx = initial_c
 
-        ev_w_ih_x = torch.zeros(batch_size, 3 * hidden_size, input_size)
-        ev_w_hh_x = torch.zeros(batch_size, 3 * hidden_size, hidden_size)
-        ev_b_x = torch.zeros(batch_size, 3 * hidden_size, 1)
-        forgetgate = torch.zeros(batch_size, hidden_size, 1)
+        ev_w_ih_x = to_device(torch.zeros(batch_size, 3 * hidden_size, input_size))
+        ev_w_hh_x = to_device(torch.zeros(batch_size, 3 * hidden_size, hidden_size))
+        ev_b_x = to_device(torch.zeros(batch_size, 3 * hidden_size, 1))
+        forgetgate = to_device(torch.zeros(batch_size, hidden_size, 1))
 
         outputs = []
         for i in range(len(inputs)):
