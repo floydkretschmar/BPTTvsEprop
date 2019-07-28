@@ -80,16 +80,16 @@ def calculate_eligibility_trace(
         ev_b,
         outgate):
     # eligibility traces
-    et_w_ih = torch.Tensor(ev_w_ih.size())
-    et_w_hh = torch.Tensor(ev_w_ih.size())
-    et_b = torch.Tensor(ev_w_ih.size())
+    et_w_ih = ev_w_ih.clone()
+    et_w_hh = ev_w_hh.clone()
+    et_b = ev_b.clone()
 
     hidden_size = outgate.size(1)
 
     # calculate eligibility traces by multiplying the eligibility vectors with the outgate
     for i in range(0, 3 * hidden_size, hidden_size):
-        et_w_ih[:, i:(i + hidden_size), :] = ev_w_ih[:, i:(i + hidden_size), :] * outgate.unsqueeze(2)
-        et_w_hh[:, i:(i + hidden_size), :] = ev_w_hh[:, i:(i + hidden_size), :] * outgate.unsqueeze(2)
-        et_b[:, i:(i + hidden_size), :] = ev_b[:, i:(i + hidden_size), :] * outgate.unsqueeze(2)
+        et_w_ih[:, i:(i + hidden_size), :] *= outgate.unsqueeze(2)
+        et_w_hh[:, i:(i + hidden_size), :] *= outgate.unsqueeze(2)
+        et_b[:, i:(i + hidden_size), :] *= outgate.unsqueeze(2)
 
     return et_w_ih, et_w_hh, et_b
