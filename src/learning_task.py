@@ -47,8 +47,6 @@ class LearningTask:
                 # Compute the loss, gradients, and update the parameters
                 loss = self.loss_function(prediction, batch_y.squeeze())
                 loss.backward()
-                #model.calculate_custom_gradients()
-
                 optimizer.step()
                 
                 total_loss += loss.item()

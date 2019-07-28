@@ -76,19 +76,12 @@ class EpropCell(LSTMCell):
     def __init__(self, input_size, hidden_size, bias=True):
         super(EpropCell, self).__init__(input_size, hidden_size, bias)
 
-        # Initialize eligibility traces and forgetgate to zero
-        self.ev_w_ih_x = torch.zeros(hidden_size, 3 * input_size)
-        self.ev_w_hh_x = torch.zeros(hidden_size, 3 * input_size)
-        self.ev_b_x = torch.zeros(hidden_size, 3 * input_size)
-        self.forgetgate = torch.zeros(hidden_size, input_size)
-
-    @jit.script_method
-    def forward(self, input, hx, cx):
-        hy, cy, self.ev_w_ih_x, self.ev_w_hh_x, self.ev_b_x, self.forgetgate = EProp1.apply(
-            self.ev_w_ih_x,
-            self.ev_w_hh_x,
-            self.ev_b_x,
-            self.forgetgate,
+    def forward(self, input, hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate):
+        hy, cy, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate = EProp1.apply(
+            ev_w_ih_x,
+            ev_w_hh_x,
+            ev_b_x,
+            forgetgate,
             input, 
             hx, 
             cx,
@@ -97,7 +90,42 @@ class EpropCell(LSTMCell):
             self.bias_ih,
             self.bias_hh)
 
-        return hy, hy, cy
+        return hy, hy, cy, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate
+
+
+class EpropLSTM(nn.Module):
+    """ 
+    Custom LSTM implementation using jit adopted from:
+    https://github.com/pytorch/benchmark/blob/master/rnns/fastrnns/custom_lstms.py
+    """
+    def __init__(self, input_size, hidden_size, bias=True):
+    #def __init__(self, cell, *cell_parameters):
+        super(EpropLSTM, self).__init__()
+        self.cell = EpropCell(input_size, hidden_size, bias)
+        #self.cell = cell(*cell_parameters)
+
+    def forward(self, input, initial_h, initial_c):
+        # input (seq_len x batch_size x input_size)
+        # initial_hidden (batch x hidden_size)
+        # initial_state (batch x hidden_size)
+        inputs = input.unbind(0)
+        input_size = input.size(2)
+        hidden_size = initial_h.size(1)
+        batch_size = input.size(1)
+        hx = initial_h
+        cx = initial_c
+
+        ev_w_ih_x = torch.zeros(batch_size, 3 * hidden_size, input_size)
+        ev_w_hh_x = torch.zeros(batch_size, 3 * hidden_size, hidden_size)
+        ev_b_x = torch.zeros(batch_size, 3 * hidden_size, 1)
+        forgetgate = torch.zeros(batch_size, hidden_size, 1)
+
+        outputs = []
+        for i in range(len(inputs)):
+            out, hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate = self.cell(inputs[i], hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate)
+            outputs += [out]
+
+        return torch.stack(outputs), hx, cx
 
 
 class LSTM(jit.ScriptModule):
@@ -105,11 +133,9 @@ class LSTM(jit.ScriptModule):
     Custom LSTM implementation using jit adopted from:
     https://github.com/pytorch/benchmark/blob/master/rnns/fastrnns/custom_lstms.py
     """
-    # def __init__(self, input_size, hidden_size, bias=True):
-    def __init__(self, cell, *cell_parameters):
+    def __init__(self, input_size, hidden_size, bias=True):
         super(LSTM, self).__init__()
-        # self.cell = LSTMCell(input_size, hidden_size, bias)
-        self.cell = cell(*cell_parameters)
+        self.cell = BPTTCell(input_size, hidden_size, bias)
 
     @jit.script_method
     def forward(self, input, initial_h, initial_c):
@@ -144,10 +170,10 @@ class MemoryLSTM(nn.Module):
 
         # LSTM layer
         if cell_type == MemoryLSTM.BPTT:
-            self.lstm = LSTM(BPTTCell, input_size, hidden_size, bias)
+            self.lstm = LSTM(input_size, hidden_size, bias)
             # self.lstm = nn.LSTM(input_size, hidden_size)
         elif cell_type == MemoryLSTM.EPROP_1:
-            self.lstm = LSTM(EpropCell, input_size, hidden_size, bias)
+            self.lstm = EpropLSTM(input_size, hidden_size, bias)
 
         # LSTM to output mapping
         self.dense = nn.Linear(hidden_size, output_size, bias)
