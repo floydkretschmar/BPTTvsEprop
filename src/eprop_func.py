@@ -103,6 +103,8 @@ class EProp1(torch.autograd.Function):
     @staticmethod
     # grad_ev_ih and grad_ev_hh should always be None
     def backward(ctx, grad_hy, grad_cy, grad_ev_w_ih, grad_ev_w_hh, grad_et_b, forgetgate_y):
+        #print(grad_hy)
+
         et_w_ih_y, et_w_hh_y, et_b_y = ctx.intermediate_results
 
         tmp_grad_hy = grad_hy.unsqueeze(2).repeat(1, 4, 1)
@@ -112,4 +114,4 @@ class EProp1(torch.autograd.Function):
         grad_bias = et_b_y * tmp_grad_hy
 
         # grad_input, grad_ev_ih, grad_ev_hh, grad_hx, grad_cx, grad_weight_ih, grad_weight_hh, grad_bias_ih, grad_bias_hh
-        return None, None, None, None, None, None, None, grad_weight_ih, grad_weight_hh, grad_bias.squeeze(), grad_bias.squeeze()
+        return None, None, None, None, None, grad_hy, grad_cy, grad_weight_ih, grad_weight_hh, grad_bias.squeeze(), grad_bias.squeeze()

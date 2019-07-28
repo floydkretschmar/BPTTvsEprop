@@ -6,9 +6,9 @@ from learning_task import MemoryTask
 from util import to_device
 
 # General Parameters #
-SEQ_LENGTH = 700
-TRAIN_SIZE = 10000
-TEST_SIZE = 5000
+SEQ_LENGTH = 200
+TRAIN_SIZE = 5000
+TEST_SIZE = 1000
 NUM_EPOCHS = 300
 BATCH_SIZE = 128
 LEARNING_RATE = 0.01
@@ -28,7 +28,7 @@ def main(args):
         SAVE_PATH,
         NUM_CLASSES)
     # the default LSTM implementation with bptt
-    model = to_device(MemoryLSTM(INPUT_SIZE, HIDEN_SIZE, NUM_CLASSES, cell_type=MemoryLSTM.BPTT, batch_first=True))
+    model = to_device(MemoryLSTM(INPUT_SIZE, HIDEN_SIZE, NUM_CLASSES, cell_type=MemoryLSTM.EPROP_1, batch_first=True))
 
     if args.test:
         model.load(LOAD_PATH)
