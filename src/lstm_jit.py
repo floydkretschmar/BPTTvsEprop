@@ -158,19 +158,18 @@ class MemoryLSTM(nn.Module):
     EPROP_2 = 2
     EPROP_3 = 3
 
-    def __init__(self, input_size, hidden_size, output_size, single_out=True, cell_type=BPTT, bias=True, batch_first=False, model_name='LSTM_BPTT'):
+    def __init__(self, input_size, hidden_size, output_size, cell_type=BPTT, bias=True, batch_first=False, model_name='LSTM_BPTT'):
         super(MemoryLSTM, self).__init__()
         self.output_size = output_size
         self.hidden_size = hidden_size
         self.input_size = input_size
         self.model_name = model_name
         self.batch_first = batch_first
-        self.single_out = single_out
 
         # LSTM layer
         if cell_type == MemoryLSTM.BPTT:
-            #self.lstm = LSTM(input_size, hidden_size, bias)
-            self.lstm = nn.LSTM(input_size, hidden_size)
+            self.lstm = LSTM(input_size, hidden_size, bias)
+            # self.lstm = nn.LSTM(input_size, hidden_size)
         elif cell_type == MemoryLSTM.EPROP_1:
             self.lstm = EpropLSTM(input_size, hidden_size, bias)
 
@@ -186,23 +185,17 @@ class MemoryLSTM(nn.Module):
         initial_c = to_device(torch.zeros(input.size(1), self.hidden_size))
 
         # lstm and dense pass for prediction
-        #lstm_out, _, _ = self.lstm(input, initial_h, initial_c)
-        lstm_out, _ = self.lstm(input)
-
-        if self.single_out:
-            lstm_out = lstm_out[-1, :, :]
-        else:
-            lstm_out = lstm_out.permute(1, 0, 2)
+        lstm_out, _, _ = self.lstm(input, initial_h, initial_c)
+        # lstm_out, _ = self.lstm(input)
 
         # mapping to outputs
-        dense_out = self.dense(lstm_out)
-        predictions = F.softmax(dense_out, dim=1)
-
+        dense_out = self.dense(lstm_out[-1, :, :])
+        predictions = F.log_softmax(dense_out, dim=1)
         return predictions
 
     def save(self, path, epoch):
         torch.save(self.state_dict(), '{}{}_{}.pth'.format(path, self.model_name, epoch, '.pth'))
 
     def load(self, path):
-        self.load_state_dict(torch.load('{}{}{}'.format(path, self.model_name, '.pth')))
+        self.load_state_dict(torch.load('{}/load/{}{}'.format(path, self.model_name, '.pth')))
         self.eval()
