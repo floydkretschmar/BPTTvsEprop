@@ -46,7 +46,7 @@ class EProp1(torch.autograd.Function):
         forgetgate_y = forgetgate_y.unsqueeze(2)
         cellgate = cellgate.unsqueeze(2)
         outgate = outgate.unsqueeze(2)
-        input = input.unsqueeze(2)
+        input = input.unsqueeze(1)
         hx = hx.unsqueeze(2)
 
         forgetgate_x = forgetgate_x.repeat(1, 3, 1)
@@ -65,20 +65,20 @@ class EProp1(torch.autograd.Function):
 
         # ingate
         base = ingate * (ones - ingate) * cellgate
-        ev_w_ih_y[:, :hidden_size, :] += base * hx
-        ev_w_hh_y[:, :hidden_size, :] += base * input
+        ev_w_hh_y[:, :hidden_size, :] += base * hx
+        ev_w_ih_y[:, :hidden_size, :] += base * input
         ev_b_y[:, :hidden_size, :] += base
         
         # forgetgate
         base = forgetgate_y * (ones - forgetgate_y) * cellgate
-        ev_w_ih_y[:, hidden_size:(2 * hidden_size), :] += base * hx
-        ev_w_hh_y[:, hidden_size:(2 * hidden_size), :] += base * input
+        ev_w_hh_y[:, hidden_size:(2 * hidden_size), :] += base * hx
+        ev_w_ih_y[:, hidden_size:(2 * hidden_size), :] += base * input
         ev_b_y[:, hidden_size:(2 * hidden_size), :] += base
 
         # cellgate
         base = ingate * (ones - cellgate**2)
-        ev_w_ih_y[:, (2 * hidden_size):(3 * hidden_size), :] += base * hx
-        ev_w_hh_y[:, (2 * hidden_size):(3 * hidden_size), :] += base * input
+        ev_w_hh_y[:, (2 * hidden_size):(3 * hidden_size), :] += base * hx
+        ev_w_ih_y[:, (2 * hidden_size):(3 * hidden_size), :] += base * input
         ev_b_y[:, (2 * hidden_size):(3 * hidden_size), :] += base
 
         # calculate eligibility traces by multiplying the eligibility vectors with the outgate
@@ -92,8 +92,8 @@ class EProp1(torch.autograd.Function):
         # => calculate second part of that equation now for input to hidden, hidden to hidden 
         #    and bias connections and multiply in the backward pass
         base = outgate * (ones - outgate) * cy.unsqueeze(2)
-        et_w_ih_y[:, (3 * hidden_size):(4 * hidden_size)] = base * hx
-        et_w_hh_y[:, (3 * hidden_size):(4 * hidden_size)] = base * input
+        et_w_hh_y[:, (3 * hidden_size):(4 * hidden_size)] = base * hx
+        et_w_ih_y[:, (3 * hidden_size):(4 * hidden_size)] = base * input
         et_b_y[:, (3 * hidden_size):(4 * hidden_size)] = base
 
         ctx.intermediate_results = et_w_ih_y, et_w_hh_y, et_b_y
