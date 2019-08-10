@@ -1,24 +1,34 @@
 import argparse
 
 from lstm_jit import MemoryLSTM
-from learning_task import MemoryTask
+from learning_task import MemoryTask, StoreRecallTask
 
 from util import to_device
 
 # General Parameters #
-SEQ_LENGTH = 200
+SEQ_LENGTH = 10
 TRAIN_SIZE = 5000
 TEST_SIZE = 1000
 NUM_EPOCHS = 300
 BATCH_SIZE = 128
 LEARNING_RATE = 0.01
+CELL_TYPE = MemoryLSTM.BPTT
 SAVE_PATH = './models/save/'
 LOAD_PATH = './models/load/'
 
-# Model parameters #
+# Model parameters Memory #
 NUM_CLASSES = 9
 INPUT_SIZE = 1
 HIDEN_SIZE = 32
+OUTPUT_SIZE = NUM_CLASSES
+SINGLE_OUT = True
+
+# Model parameters Store recall#
+#NUM_CLASSES = 2
+#INPUT_SIZE = 3
+#HIDEN_SIZE = 64
+#OUTPUT_SIZE = NUM_CLASSES + 1
+#SINGLE_OUT = False
 
 
 def main(args):
@@ -27,8 +37,12 @@ def main(args):
         BATCH_SIZE,
         SAVE_PATH,
         NUM_CLASSES)
-    # the default LSTM implementation with bptt
-    model = to_device(MemoryLSTM(INPUT_SIZE, HIDEN_SIZE, NUM_CLASSES, cell_type=MemoryLSTM.EPROP_1, batch_first=True))
+    #task = StoreRecallTask(
+    #    NUM_EPOCHS,
+    #    BATCH_SIZE,
+    #    SAVE_PATH,
+    #    NUM_CLASSES)
+    model = to_device(MemoryLSTM(INPUT_SIZE, HIDEN_SIZE, OUTPUT_SIZE, SINGLE_OUT, CELL_TYPE, batch_first=True))
 
     if args.test:
         model.load(LOAD_PATH)
