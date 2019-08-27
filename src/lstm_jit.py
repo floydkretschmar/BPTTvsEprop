@@ -93,7 +93,7 @@ class EpropCell(LSTMCell):
         return hy, hy, cy, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate
 
 
-class EpropLSTM(nn.Module):
+class EpropLSTM(jit.ScriptModule):
     """ 
     Custom LSTM implementation using jit adopted from:
     https://github.com/pytorch/benchmark/blob/master/rnns/fastrnns/custom_lstms.py
@@ -102,6 +102,7 @@ class EpropLSTM(nn.Module):
         super(EpropLSTM, self).__init__()
         self.cell = EpropCell(input_size, hidden_size, bias)
 
+    @jit.script_method
     def forward(self, input, initial_h, initial_c):
         # input (seq_len x batch_size x input_size)
         # initial_hidden (batch x hidden_size)
