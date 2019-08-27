@@ -405,3 +405,4 @@ dmypy.json
 .history
 
 # End of https://www.gitignore.io/api/latex,python,visualstudiocode
+models/*
