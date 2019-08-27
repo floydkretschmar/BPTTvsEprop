@@ -7,7 +7,7 @@ import torch.optim as optim
 import time
 
 from util import to_device
-from memory_task import generate_data, test
+from memory_task import generate_data
 import config
 
 
@@ -18,18 +18,43 @@ def get_batched_data(data, labels):
         yield data[indices], labels[indices]
 
 
+def format_pred_and_gt(pred, gt):
+    if len(pred.size()) > 2:
+        pred = pred.view(-1, pred.size(2))
+        gt = gt.squeeze().view(-1)
+    else:
+        gt = gt.squeeze()
+
+    return pred, gt
+
+
+def test(model, loss_function, size_test_data, sequence_length):
+    print('######################### TESTING #########################')
+    for delta in range(1, sequence_length):
+        test_X, test_Y = generate_data(size_test_data, sequence_length, delta)
+        print("Delta {}:".format(delta))
+        with torch.no_grad():
+            prediction = model(test_X)
+            loss = loss_function(prediction, test_Y.squeeze())
+            print('Loss: {}'.format(loss))
+
+
 def main(args):
-    # the default LSTM implementation with bptt
-    model = to_device(MemoryLSTM(config.INPUT_SIZE, config.HIDEN_SIZE, config.NUM_CLASSES, cell_type=MemoryLSTM.BPTT, batch_first=True))
+    # Chose the model:
+    model = to_device(MemoryLSTM(
+        config.INPUT_SIZE, 
+        config.HIDEN_SIZE, 
+        config.NUM_CLASSES))
 
     if args.test:
         model.load(config.LOAD_PATH)
 
     if not args.test:
-        # Use negative log-likelihood and ADAM
+        # Use negative log-likelihood and ADAM for training
         optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
         loss_function = nn.NLLLoss()
 
+        # data generation is dependend on the training task
         train_X, train_Y = generate_data(config.TRAIN_SIZE, config.SEQ_LENGTH)
         training_results = []
 
@@ -43,9 +68,11 @@ def main(args):
                 # reset gradient
                 optimizer.zero_grad()
                 prediction = model(batch_x)
+
+                prediction, gt = format_pred_and_gt(prediction, batch_y)
                 
                 # Compute the loss, gradients, and update the parameters
-                loss = loss_function(prediction, batch_y.squeeze())
+                loss = loss_function(prediction, gt)
                 loss.backward()
                 optimizer.step()
                 
