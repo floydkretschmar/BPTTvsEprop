@@ -200,10 +200,11 @@ class MemoryLSTM(nn.Module):
 
         # mapping to outputs
         if self.single_output:
-            dense_out = self.dense(lstm_out[-1, :, :])        
+            lstm_out = lstm_out[-1, :, :]       
         else:
             lstm_out = lstm_out.permute(1, 0, 2)
             
+        dense_out = self.dense(lstm_out)    
         predictions = F.log_softmax(dense_out, dim=1)
         return predictions
 
