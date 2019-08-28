@@ -7,7 +7,7 @@ import torch.optim as optim
 import time
 
 from util import to_device
-from memory_task import generate_data as mem_generate_data
+from memory_task import generate_data_single as mem_generate_data
 from store_recall_task import generate_data as sr_generate_data
 import config
 
@@ -22,11 +22,11 @@ def get_batched_data(data, labels):
         yield data[indices], labels[indices]
 
 
-def format_pred_and_gt(pred, gt, mem_task):
-    if mem_task == STORE_RECALL:
+def format_pred_and_gt(pred, gt, single_output):
+    if not single_output:
         pred = pred.view(-1, pred.size(2))
         gt = gt.squeeze().view(-1)
-    elif mem_task == MEMORY:
+    else:
         gt = gt.squeeze()
 
     return pred, gt
@@ -46,26 +46,29 @@ def test(model, loss_function, generate_data, size_test_data, sequence_length):
 def chose_task(memory_task):
     # Chose the task and corresponding model:
     if memory_task == MEMORY:
+        single_output = True
         generate_data = mem_generate_data
         model = to_device(MemoryLSTM(
             config.MEM_INPUT_SIZE, 
             config.MEM_HIDEN_SIZE, 
-            config.MEM_NUM_CLASSES))
+            config.MEM_NUM_CLASSES,
+            single_output=single_output))
         loss_function = nn.NLLLoss()
     elif memory_task == STORE_RECALL:
+        single_output = False
         generate_data = sr_generate_data
         model = to_device(MemoryLSTM(
             config.SR_INPUT_SIZE, 
             config.SR_HIDEN_SIZE, 
             config.SR_NUM_CLASSES + 1,
-            single_output=False))
+            single_output=single_output))
         loss_function = nn.NLLLoss()
 
-    return generate_data, model, loss_function
+    return generate_data, model, loss_function, single_output
 
 
 def main(args):
-    generate_data, model, loss_function = chose_task(args.mem_task)
+    generate_data, model, loss_function, single_output = chose_task(args.mem_task)
 
     if args.test:
         model.load(config.LOAD_PATH)
@@ -89,7 +92,7 @@ def main(args):
                 optimizer.zero_grad()
                 prediction = model(batch_x)
 
-                prediction, gt = format_pred_and_gt(prediction, batch_y, args.mem_task)
+                prediction, gt = format_pred_and_gt(prediction, batch_y, single_output)
                 
                 # Compute the loss, gradients, and update the parameters
                 loss = loss_function(prediction, gt)
