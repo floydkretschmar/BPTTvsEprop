@@ -2,9 +2,10 @@ import numpy as np
 import torch
 
 from util import to_device
+from config import SR_NUM_CLASSES as NUM_CLASSES
 
 
-def generate_data(self, num_observations, sequence_length, time_delta=None):
+def generate_data(num_observations, sequence_length, time_delta=None):
     '''
     Generates the sequences of form (num_observations, sequence_length) where the entire sequence is 
     filled with 0s, except for one singular signal at a random position inside the sequence.
@@ -12,7 +13,7 @@ def generate_data(self, num_observations, sequence_length, time_delta=None):
     the network expects labels in the range between 0 and num_classes - 1 instead of 1 and num_classes.
     '''
     size = ((num_observations, sequence_length, 1))
-    data_stream = np.random.randint(1, self.num_classes + 1, size)
+    data_stream = np.random.randint(1, NUM_CLASSES + 1, size)
     store_signal = np.zeros(size)
     recall_signal = np.zeros(size)
     labels = np.zeros(size)

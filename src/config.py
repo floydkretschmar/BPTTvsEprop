@@ -8,9 +8,13 @@ LEARNING_RATE = 0.01
 SAVE_PATH = './models/save/'
 LOAD_PATH = './models/load/'
 
-# Model parameters #
-INPUT_SIZE = 1
-HIDEN_SIZE = 32
-
 # Memory Task parameters #
-NUM_CLASSES = 9
+MEM_INPUT_SIZE = 1
+MEM_HIDEN_SIZE = 32
+MEM_NUM_CLASSES = 9
+
+# Store Recall Task parameters #
+SR_INPUT_SIZE = 3
+SR_HIDEN_SIZE = 32
+SR_NUM_CLASSES = 2
+SEQ_LENGTH = 10

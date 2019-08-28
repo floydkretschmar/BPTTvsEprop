@@ -7,8 +7,12 @@ import torch.optim as optim
 import time
 
 from util import to_device
-from memory_task import generate_data
+from memory_task import generate_data as mem_generate_data
+from store_recall_task import generate_data as sr_generate_data
 import config
+
+STORE_RECALL = 'S_R'
+MEMORY = 'MEM'
 
 
 def get_batched_data(data, labels):
@@ -18,17 +22,17 @@ def get_batched_data(data, labels):
         yield data[indices], labels[indices]
 
 
-def format_pred_and_gt(pred, gt):
-    if len(pred.size()) > 2:
+def format_pred_and_gt(pred, gt, mem_task):
+    if mem_task == STORE_RECALL:
         pred = pred.view(-1, pred.size(2))
         gt = gt.squeeze().view(-1)
-    else:
+    elif mem_task == MEMORY:
         gt = gt.squeeze()
 
     return pred, gt
 
 
-def test(model, loss_function, size_test_data, sequence_length):
+def test(model, loss_function, generate_data, size_test_data, sequence_length):
     print('######################### TESTING #########################')
     for delta in range(1, sequence_length):
         test_X, test_Y = generate_data(size_test_data, sequence_length, delta)
@@ -39,12 +43,29 @@ def test(model, loss_function, size_test_data, sequence_length):
             print('Loss: {}'.format(loss))
 
 
+def chose_task(memory_task):
+    # Chose the task and corresponding model:
+    if memory_task == MEMORY:
+        generate_data = mem_generate_data
+        model = to_device(MemoryLSTM(
+            config.MEM_INPUT_SIZE, 
+            config.MEM_HIDEN_SIZE, 
+            config.MEM_NUM_CLASSES))
+        loss_function = nn.NLLLoss()
+    elif memory_task == STORE_RECALL:
+        generate_data = sr_generate_data
+        model = to_device(MemoryLSTM(
+            config.SR_INPUT_SIZE, 
+            config.SR_HIDEN_SIZE, 
+            config.SR_NUM_CLASSES + 1,
+            single_output=False))
+        loss_function = nn.NLLLoss()
+
+    return generate_data, model, loss_function
+
+
 def main(args):
-    # Chose the model:
-    model = to_device(MemoryLSTM(
-        config.INPUT_SIZE, 
-        config.HIDEN_SIZE, 
-        config.NUM_CLASSES))
+    generate_data, model, loss_function = chose_task(args.mem_task)
 
     if args.test:
         model.load(config.LOAD_PATH)
@@ -52,7 +73,6 @@ def main(args):
     if not args.test:
         # Use negative log-likelihood and ADAM for training
         optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
-        loss_function = nn.NLLLoss()
 
         # data generation is dependend on the training task
         train_X, train_Y = generate_data(config.TRAIN_SIZE, config.SEQ_LENGTH)
@@ -69,7 +89,7 @@ def main(args):
                 optimizer.zero_grad()
                 prediction = model(batch_x)
 
-                prediction, gt = format_pred_and_gt(prediction, batch_y)
+                prediction, gt = format_pred_and_gt(prediction, batch_y, args.mem_task)
                 
                 # Compute the loss, gradients, and update the parameters
                 loss = loss_function(prediction, gt)
@@ -89,12 +109,13 @@ def main(args):
             for result in training_results:
                 file.write("{}\n".format(result))
 
-    test(model, loss_function, config.TEST_SIZE, config.SEQ_LENGTH)
+    test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--test', type=bool, required=False)
+    parser.add_argument('--mem_task', default=MEMORY, type=str)
     args = parser.parse_args()
 
     main(args)
