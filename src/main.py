@@ -7,8 +7,7 @@ import torch.optim as optim
 import time
 
 from util import to_device
-from memory_task import generate_data_single as mem_generate_data
-from store_recall_task import generate_data as sr_generate_data
+from learning_tasks import generate_single_lable_memory_data, generate_multi_lable_memory_data, generate_store_and_recall_data
 import config
 
 STORE_RECALL = 'S_R'
@@ -47,7 +46,7 @@ def chose_task(memory_task):
     # Chose the task and corresponding model:
     if memory_task == MEMORY:
         single_output = True
-        generate_data = mem_generate_data
+        generate_data = generate_single_lable_memory_data
         model = to_device(MemoryLSTM(
             config.MEM_INPUT_SIZE, 
             config.MEM_HIDEN_SIZE, 
@@ -56,7 +55,7 @@ def chose_task(memory_task):
         loss_function = nn.NLLLoss()
     elif memory_task == STORE_RECALL:
         single_output = False
-        generate_data = sr_generate_data
+        generate_data = generate_store_and_recall_data
         model = to_device(MemoryLSTM(
             config.SR_INPUT_SIZE, 
             config.SR_HIDEN_SIZE, 
