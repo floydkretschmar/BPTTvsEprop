@@ -153,7 +153,7 @@ class LSTM(jit.ScriptModule):
         return torch.stack(outputs), hx, cx
 
 
-class MemoryLSTM(nn.Module):
+class BaseNetwork(nn.Module):
     BPTT = 0
     EPROP_1 = 1
     EPROP_2 = 2
@@ -167,7 +167,7 @@ class MemoryLSTM(nn.Module):
                  batch_first=True, 
                  single_output=True,
                  cell_type=BPTT):
-        super(MemoryLSTM, self).__init__()
+        super(BaseNetwork, self).__init__()
         self.output_size = output_size
         self.hidden_size = hidden_size
         self.input_size = input_size
@@ -175,11 +175,11 @@ class MemoryLSTM(nn.Module):
         self.single_output = single_output
 
         # LSTM layer
-        if cell_type == MemoryLSTM.BPTT:
+        if cell_type == BaseNetwork.BPTT:
             self.lstm = LSTM(input_size, hidden_size, bias) 
             self.model_name = 'LSTM_BPTT'
             # self.lstm = nn.LSTM(input_size, hidden_size)
-        elif cell_type == MemoryLSTM.EPROP_1:
+        elif cell_type == BaseNetwork.EPROP_1:
             self.lstm = EpropLSTM(input_size, hidden_size, bias)
             self.model_name = 'LSTM_EPROP'
 
@@ -214,3 +214,21 @@ class MemoryLSTM(nn.Module):
     def load(self, path):
         self.load_state_dict(torch.load('{}{}{}'.format(path, self.model_name, '.pth')))
         self.eval()
+
+
+class MemoryNetwork(BaseNetwork):
+    def __init__(self, 
+                 input_size, 
+                 hidden_size, 
+                 output_size, 
+                 cell_type=BaseNetwork.BPTT):
+        super(MemoryNetwork, self).__init__(input_size, hidden_size, output_size, cell_type=cell_type, single_output=True)
+
+
+class StoreRecallNetwork(BaseNetwork):
+    def __init__(self, 
+                 input_size, 
+                 hidden_size, 
+                 output_size, 
+                 cell_type=BaseNetwork.BPTT):
+        super(StoreRecallNetwork, self).__init__(input_size, hidden_size, output_size, cell_type=cell_type, single_output=False)

@@ -1,13 +1,13 @@
 import argparse
 
-from lstm_jit import MemoryLSTM
+from lstm_jit import MemoryNetwork, StoreRecallNetwork
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import time
 
 from util import to_device
-from learning_tasks import generate_single_lable_memory_data, generate_multi_lable_memory_data, generate_store_and_recall_data
+from learning_tasks import generate_single_lable_memory_data, generate_store_and_recall_data
 import config
 
 STORE_RECALL = 'S_R'
@@ -47,20 +47,18 @@ def chose_task(memory_task):
     if memory_task == MEMORY:
         single_output = True
         generate_data = generate_single_lable_memory_data
-        model = to_device(MemoryLSTM(
+        model = to_device(MemoryNetwork(
             config.MEM_INPUT_SIZE, 
             config.MEM_HIDEN_SIZE, 
-            config.MEM_NUM_CLASSES,
-            single_output=single_output))
+            config.MEM_NUM_CLASSES))
         loss_function = nn.NLLLoss()
     elif memory_task == STORE_RECALL:
         single_output = False
         generate_data = generate_store_and_recall_data
-        model = to_device(MemoryLSTM(
+        model = to_device(StoreRecallNetwork(
             config.SR_INPUT_SIZE, 
             config.SR_HIDEN_SIZE, 
-            config.SR_NUM_CLASSES + 1,
-            single_output=single_output))
+            config.SR_NUM_CLASSES + 1))
         loss_function = nn.NLLLoss()
 
     return generate_data, model, loss_function, single_output
