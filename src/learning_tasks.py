@@ -45,7 +45,7 @@ def generate_multi_lable_memory_data(num_observations, sequence_length, time_del
     return to_device(torch.from_numpy(data).float()), to_device(torch.from_numpy(labels).long())
 
 
-def generate_store_and_recall_data(num_observations, sequence_length, time_delta=None):
+def generate_store_and_recall_data(num_observations, sequence_length, recall_repetition=0, time_delta=None):
     '''
     Generates num_observations sequences of length sequence_length. The input
     consists of three different signals:
@@ -67,13 +67,15 @@ def generate_store_and_recall_data(num_observations, sequence_length, time_delta
 
     for i, row in enumerate(data_stream):
         # select time step where store signal is sent
-        store = np.random.choice(list(range(sequence_length - time_delta)))
+        store = np.random.choice(list(range(sequence_length - time_delta - recall_repetition)))
         store_signal[i][store] = 1
 
         # select time step where recall signal is sent
-        recall = np.random.choice(list(range(store + time_delta, sequence_length)))
-        recall_signal[i][recall] = 1
-        labels[i][recall] = row[store]
+        recall = np.random.choice(list(range(store + time_delta, sequence_length - recall_repetition)))
+        
+        for j in range(0, recall_repetition + 1):
+            recall_signal[i][recall + j] = 1
+            labels[i][recall + j] = row[store]
 
         data.append(np.hstack((row, store_signal[i], recall_signal[i])))
 
