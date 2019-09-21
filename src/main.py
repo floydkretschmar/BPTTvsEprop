@@ -1,6 +1,6 @@
 import argparse
 
-from lstm_jit import MemoryNetwork, StoreRecallNetwork
+from lstm_jit import MemoryNetwork, StoreRecallNetwork, BaseNetwork
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -36,14 +36,26 @@ def format_pred_and_gt(pred, gt, memory_task):
     return pred, gt
 
 
-def test(model, loss_function, generate_data, size_test_data, sequence_length):
+def test(model, loss_function, generate_data, size_test_data, sequence_length, memory_task):
     print('######################### TESTING #########################')
     for delta in range(1, sequence_length):
-        test_X, test_Y = generate_data(size_test_data, sequence_length, delta)
+        test_X, test_Y = generate_data(size_test_data, sequence_length, time_delta=delta)
         print("Delta {}:".format(delta))
         with torch.no_grad():
-            prediction = model(test_X)
-            loss = loss_function(prediction, test_Y.squeeze())
+            pred = model(test_X)
+            prediction, gt = format_pred_and_gt(pred, test_Y, args.mem_task)
+            loss = loss_function(prediction, gt)
+
+            if memory_task == STORE_RECALL:
+                print('-- Example input sequence --')
+                print(test_X[0])
+                print('-- Example labels --')
+                print(test_Y[0])
+                print('-- Example predictions --')
+                print(torch.argmax(pred[0], dim=1))
+            else:
+                print(prediction[0])
+
             print('Loss: {}'.format(loss))
 
 
@@ -55,14 +67,15 @@ def chose_task(memory_task):
             config.MEM_INPUT_SIZE, 
             config.MEM_HIDEN_SIZE, 
             config.MEM_NUM_CLASSES))
-        loss_function = nn.NLLLoss()
+        loss_function = nn.CrossEntropyLoss()
     elif memory_task == STORE_RECALL:
         generate_data = generate_store_and_recall_data
         model = to_device(StoreRecallNetwork(
             config.SR_INPUT_SIZE, 
             config.SR_HIDEN_SIZE, 
-            config.SR_NUM_CLASSES + 1))
-        loss_function = nn.NLLLoss()
+            config.SR_NUM_CLASSES,
+            cell_type=BaseNetwork.EPROP_1))
+        loss_function = nn.CrossEntropyLoss()
 
     return generate_data, model, loss_function
 
@@ -112,7 +125,7 @@ def main(args):
             for result in training_results:
                 file.write("{}\n".format(result))
 
-    test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH)
+    test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH, args.mem_task)
 
 
 if __name__ == '__main__':

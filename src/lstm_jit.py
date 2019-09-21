@@ -205,7 +205,8 @@ class BaseNetwork(nn.Module):
             lstm_out = lstm_out.permute(1, 0, 2)
             
         dense_out = self.dense(lstm_out)    
-        predictions = F.log_softmax(dense_out, dim=1)
+        #predictions = F.log_softmax(dense_out, dim=1)
+        predictions = dense_out
         return predictions
 
     def save(self, path, epoch):
