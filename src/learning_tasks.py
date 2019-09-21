@@ -58,7 +58,7 @@ def generate_store_and_recall_data(num_observations, sequence_length, recall_rep
     of the last stored data point if the corresponding recall signal is 1.
     '''
     size = ((num_observations, sequence_length, 1))
-    data_stream = np.random.randint(1, SR_NUM_CLASSES + 1, size)
+    data_stream = np.random.randint(1, SR_NUM_CLASSES - 1, size)
     store_signal = np.zeros(size)
     recall_signal = np.zeros(size)
     labels = np.zeros(size)
