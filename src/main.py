@@ -21,10 +21,15 @@ def get_batched_data(data, labels):
         yield data[indices], labels[indices]
 
 
-def format_pred_and_gt(pred, gt, single_output):
-    if not single_output:
+def format_pred_and_gt(pred, gt, memory_task):
+    if memory_task == STORE_RECALL:
         pred = pred.view(-1, pred.size(2))
         gt = gt.squeeze().view(-1)
+
+        # for store recall: only use the time steps in which data is actively
+        # recalled and IGNORE the output at all other steps
+        pred = pred[gt != 0]
+        gt = gt[gt != 0]
     else:
         gt = gt.squeeze()
 
@@ -45,7 +50,6 @@ def test(model, loss_function, generate_data, size_test_data, sequence_length):
 def chose_task(memory_task):
     # Chose the task and corresponding model:
     if memory_task == MEMORY:
-        single_output = True
         generate_data = generate_single_lable_memory_data
         model = to_device(MemoryNetwork(
             config.MEM_INPUT_SIZE, 
@@ -53,7 +57,6 @@ def chose_task(memory_task):
             config.MEM_NUM_CLASSES))
         loss_function = nn.NLLLoss()
     elif memory_task == STORE_RECALL:
-        single_output = False
         generate_data = generate_store_and_recall_data
         model = to_device(StoreRecallNetwork(
             config.SR_INPUT_SIZE, 
@@ -61,11 +64,11 @@ def chose_task(memory_task):
             config.SR_NUM_CLASSES + 1))
         loss_function = nn.NLLLoss()
 
-    return generate_data, model, loss_function, single_output
+    return generate_data, model, loss_function
 
 
 def main(args):
-    generate_data, model, loss_function, single_output = chose_task(args.mem_task)
+    generate_data, model, loss_function = chose_task(args.mem_task)
 
     if args.test:
         model.load(config.LOAD_PATH)
@@ -89,7 +92,7 @@ def main(args):
                 optimizer.zero_grad()
                 prediction = model(batch_x)
 
-                prediction, gt = format_pred_and_gt(prediction, batch_y, single_output)
+                prediction, gt = format_pred_and_gt(prediction, batch_y, args.mem_task)
                 
                 # Compute the loss, gradients, and update the parameters
                 loss = loss_function(prediction, gt)
