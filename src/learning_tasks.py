@@ -29,9 +29,6 @@ def generate_multi_lable_memory_data(num_observations, sequence_length, time_del
     '''
     Generates num_observations sequences of length sequence_length where the entire sequence is 
     filled with 0s, except for one singular signal at a random position inside the sequence.
-    The label of a sequence is of the length sequence_length. The lable is 0 for all entries before the
-    singular signal and has the value of the signal for all entries after the signal. Because the NLLLoss is u
-    sed to train the network expects labels in the range between 0 and num_classes - 1 instead of 1 and num_classes.
     '''
     size = ((num_observations, sequence_length, 1))
     data = np.zeros(size)    
@@ -42,10 +39,11 @@ def generate_multi_lable_memory_data(num_observations, sequence_length, time_del
         column = np.random.randint(0, last_possible_signal, 1)[0]
         
         row[column] = signal
-        labels[i, :column] = 0
-        labels[i, column:] = signal - 1
+        labels[i, :-1] = 0
+        labels[i, -1] = signal - 1
 
     return to_device(torch.from_numpy(data).float()), to_device(torch.from_numpy(labels).long())
+
 
 def generate_store_and_recall_data(num_observations, sequence_length, time_delta=None):
     '''
