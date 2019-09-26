@@ -5,14 +5,16 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import time
+from datetime import datetime
 
 from util import to_device
 from learning_tasks import generate_single_lable_memory_data, generate_store_and_recall_data
 import config
 
+import logging
+
 STORE_RECALL = 'S_R'
 MEMORY = 'MEM'
-
 
 def get_batched_data(data, labels):
     permutation = torch.randperm(data.size()[0])
@@ -37,36 +39,27 @@ def format_pred_and_gt(pred, gt, memory_task):
 
 
 def test(model, loss_function, generate_data, size_test_data, sequence_length, memory_task):
-    print('######################### TESTING #########################')
+    logging.info('----------------- Started Testing -----------------')
     for delta in range(1, sequence_length):
         test_X, test_Y = generate_data(size_test_data, sequence_length, time_delta=delta)
-        print("Delta {}:".format(delta))
+        logging.info("Delta {}:".format(delta))
         with torch.no_grad():
             pred = model(test_X)
-            prediction, gt = format_pred_and_gt(pred, test_Y, args.mem_task)
+            prediction, gt = format_pred_and_gt(pred, test_Y, args.memory_task)
             loss = loss_function(prediction, gt)
 
-            if memory_task == STORE_RECALL:
-                print('-- Example input sequence --')
-                print(test_X[0])
-                print('-- Example labels --')
-                print(test_Y[0])
-                print('-- Example predictions --')
-                print(torch.argmax(pred[0], dim=1))
-            else:
-                print(prediction[0])
-
-            print('Loss: {}'.format(loss))
+            logging.info('Loss: {}'.format(loss))
 
 
-def chose_task(memory_task):
+def chose_task(memory_task, training_algorithm):
     # Chose the task and corresponding model:
     if memory_task == MEMORY:
         generate_data = generate_single_lable_memory_data
         model = to_device(MemoryNetwork(
             config.MEM_INPUT_SIZE, 
             config.MEM_HIDEN_SIZE, 
-            config.MEM_NUM_CLASSES))
+            config.MEM_NUM_CLASSES,
+            cell_type=training_algorithm))
         loss_function = nn.CrossEntropyLoss()
     elif memory_task == STORE_RECALL:
         generate_data = generate_store_and_recall_data
@@ -74,14 +67,14 @@ def chose_task(memory_task):
             config.SR_INPUT_SIZE, 
             config.SR_HIDEN_SIZE, 
             config.SR_NUM_CLASSES,
-            cell_type=BaseNetwork.EPROP_1))
+            cell_type=training_algorithm))
         loss_function = nn.CrossEntropyLoss()
 
     return generate_data, model, loss_function
 
 
 def main(args):
-    generate_data, model, loss_function = chose_task(args.mem_task)
+    generate_data, model, loss_function = chose_task(args.memory_task, args.training_algorithm)
 
     if args.test:
         model.load(config.LOAD_PATH)
@@ -94,7 +87,7 @@ def main(args):
         train_X, train_Y = generate_data(config.TRAIN_SIZE, config.SEQ_LENGTH)
         training_results = []
 
-        print('######################### TRAINING #########################')
+        logging.info('----------------- Started Training -----------------')
         for epoch in range(1, config.NUM_EPOCHS + 1):
             start_time = time.time()
             total_loss = 0
@@ -105,7 +98,7 @@ def main(args):
                 optimizer.zero_grad()
                 prediction = model(batch_x)
 
-                prediction, gt = format_pred_and_gt(prediction, batch_y, args.mem_task)
+                prediction, gt = format_pred_and_gt(prediction, batch_y, args.memory_task)
                 
                 # Compute the loss, gradients, and update the parameters
                 loss = loss_function(prediction, gt)
@@ -115,23 +108,58 @@ def main(args):
                 total_loss += loss.item()
                 batch_num += 1
 
-            training_results.append('Epoch {} \t => Loss: {} [Batch-Time = {}s]'.format(epoch, total_loss / batch_num, round(time.time() - start_time, 2)))
-            print(training_results[-1])
-
-            if epoch % 50 == 0:
+            result = 'Epoch {} \t => Loss: {} [Batch-Time = {}s]'.format(epoch, total_loss / batch_num, round(time.time() - start_time, 2))
+            logging.info(result)
+            
+            if epoch % 25 == 0:
+                logging.info("Saved model")
                 model.save(config.SAVE_PATH, epoch)
 
-        with open('{}/results.txt'.format(config.SAVE_PATH), 'w') as file:
-            for result in training_results:
-                file.write("{}\n".format(result))
+        #with open('{}/results.txt'.format(config.SAVE_PATH), 'w') as file:
+        #    for result in training_results:
+        #        file.write("{}\n".format(result))
 
-    test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH, args.mem_task)
+    test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH, args.memory_task)
 
+
+def setup_logging():
+    # set up logging to file - see previous section for more details
+    logging.basicConfig(level=logging.DEBUG,
+                        format='%(levelname)-8s %(message)s',
+                        filename='{}/training_results.log'.format(config.SAVE_PATH))
+    # define a Handler which writes INFO messages or higher to the sys.stderr
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    # set a format which is simpler for console use
+    formatter = logging.Formatter('%(message)s')
+    # tell the handler to use this format
+    console.setFormatter(formatter)
+    # add the handler to the root logger
+    logging.getLogger('').addHandler(console)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--test', type=bool, required=False)
-    parser.add_argument('--mem_task', default=MEMORY, type=str)
+    parser.add_argument('--test', action='store_true', default=False)
+    parser.add_argument('-m', '--memory_task', default=MEMORY, type=str)
+    parser.add_argument('-a', '--training_algorithm', default=BaseNetwork.BPTT, type=int)
     args = parser.parse_args()
 
+    setup_logging()
+
+    logging.info("----------------- Started Run -----------------")
+    logging.info("Time: {}".format(datetime.now()))
+    if args.training_algorithm == BaseNetwork.BPTT:
+        ta = "BPTT"
+    elif args.training_algorithm == BaseNetwork.EPROP_1:
+        ta = "EPROP_1"
+
+    if args.memory_task == MEMORY:
+        task = "Memory"
+    elif args.memory_task == STORE_RECALL:
+        task = "Store and Recall"
+
+    logging.info("Task: {}".format(task))   
+    logging.info("Training algorithm: {}".format(ta))
+
     main(args)
+    logging.info("----------------- Finished Run -----------------")
