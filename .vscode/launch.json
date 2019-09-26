@@ -34,7 +34,7 @@
             "request": "launch",
             "program": "${workspaceRoot}/src/main.py",
             "console": "integratedTerminal",
-            "args": ["--mem_task", "S_R", "--test"]
+            "args": ["--mem_task", "S_R", "--test", "True"]
         }
     ]
 }
