@@ -28,8 +28,8 @@ def format_pred_and_gt(pred, gt, memory_task):
 
         # for store recall: only use the time steps in which data is actively
         # recalled and IGNORE the output at all other steps
-        pred = pred[gt != 0]
-        gt = gt[gt != 0]
+        # pred = pred[gt != 0]
+        # gt = gt[gt != 0]
     else:
         gt = gt.squeeze()
 
