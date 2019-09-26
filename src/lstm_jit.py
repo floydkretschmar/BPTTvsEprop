@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.jit as jit
-import torch.nn.functional as F
 
 import math
 
@@ -205,7 +204,6 @@ class BaseNetwork(nn.Module):
             lstm_out = lstm_out.permute(1, 0, 2)
             
         dense_out = self.dense(lstm_out)    
-        #predictions = F.log_softmax(dense_out, dim=1)
         predictions = dense_out
         return predictions
 
