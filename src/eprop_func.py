@@ -48,8 +48,7 @@ class EProp1(torch.autograd.Function):
         hx = hx.unsqueeze(2)
         cx = cx.unsqueeze(2)
 
-        #forgetgate_x = forgetgate_x.repeat(1, 3, 1)
-        forgetgate_x = forgetgate_y.repeat(1, 3, 1)
+        forgetgate_x = forgetgate_x.repeat(1, 3, 1)
 
         # the new eligibility vectors ...
         ev_w_ih_y = ev_w_ih_x.clone() * forgetgate_x
