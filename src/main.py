@@ -115,14 +115,10 @@ def main(args):
                 logging.info("Saved model")
                 model.save(config.SAVE_PATH, epoch)
 
-        #with open('{}/results.txt'.format(config.SAVE_PATH), 'w') as file:
-        #    for result in training_results:
-        #        file.write("{}\n".format(result))
-
     test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH, args.memory_task)
 
 
-def setup_logging():
+def setup_logging(args):
     # set up logging to file - see previous section for more details
     logging.basicConfig(level=logging.DEBUG,
                         format='%(levelname)-8s %(message)s',
@@ -130,21 +126,12 @@ def setup_logging():
     # define a Handler which writes INFO messages or higher to the sys.stderr
     console = logging.StreamHandler()
     console.setLevel(logging.INFO)
-    # set a format which is simpler for console use
+    # set a format which is simpler
     formatter = logging.Formatter('%(message)s')
     # tell the handler to use this format
     console.setFormatter(formatter)
     # add the handler to the root logger
     logging.getLogger('').addHandler(console)
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--test', action='store_true', default=False)
-    parser.add_argument('-m', '--memory_task', default=MEMORY, type=str)
-    parser.add_argument('-a', '--training_algorithm', default=BaseNetwork.BPTT, type=int)
-    args = parser.parse_args()
-
-    setup_logging()
 
     logging.info("----------------- Started Run -----------------")
     logging.info("Time: {}".format(datetime.now()))
@@ -161,5 +148,14 @@ if __name__ == '__main__':
     logging.info("Task: {}".format(task))   
     logging.info("Training algorithm: {}".format(ta))
 
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--test', action='store_true', default=False)
+    parser.add_argument('-m', '--memory_task', default=MEMORY, type=str)
+    parser.add_argument('-a', '--training_algorithm', default=BaseNetwork.BPTT, type=int)
+    args = parser.parse_args()
+
+    setup_logging(args)
     main(args)
+    
     logging.info("----------------- Finished Run -----------------")
