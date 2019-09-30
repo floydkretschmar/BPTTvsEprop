@@ -26,7 +26,15 @@
             "request": "launch",
             "program": "${workspaceRoot}/src/main.py",
             "console": "integratedTerminal",
-            "args": ["--mem_task", "S_R"]
+            "args": ["--memory_task", "S_R"]
+        },
+        {
+            "name": "Train Store Recall Task Eprop",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceRoot}/src/main.py",
+            "console": "integratedTerminal",
+            "args": ["--memory_task", "S_R", "-a", "1"]
         },
         {
             "name": "Test Store Recall Task",
@@ -34,7 +42,7 @@
             "request": "launch",
             "program": "${workspaceRoot}/src/main.py",
             "console": "integratedTerminal",
-            "args": ["--mem_task", "S_R", "--test", "True"]
+            "args": ["--memory_task", "S_R", "--test"]
         }
     ]
 }
