@@ -46,8 +46,10 @@ class EProp1(torch.autograd.Function):
         outgate = outgate.unsqueeze(2)
         input = input.unsqueeze(1)
         hx = hx.unsqueeze(2)
+        cx = cx.unsqueeze(2)
 
-        forgetgate_x = forgetgate_x.repeat(1, 3, 1)
+        #forgetgate_x = forgetgate_x.repeat(1, 3, 1)
+        forgetgate_x = forgetgate_y.repeat(1, 3, 1)
 
         # the new eligibility vectors ...
         ev_w_ih_y = ev_w_ih_x.clone() * forgetgate_x
@@ -68,7 +70,8 @@ class EProp1(torch.autograd.Function):
         ev_b_y[:, :hidden_size, :] += base
         
         # forgetgate
-        base = forgetgate_y * (ones - forgetgate_y) * cellgate
+        #base = forgetgate_y * (ones - forgetgate_y) * cellgate
+        base = forgetgate_y * (ones - forgetgate_y) * cx
         ev_w_hh_y[:, hidden_size:(2 * hidden_size), :] += base * hx
         ev_w_ih_y[:, hidden_size:(2 * hidden_size), :] += base * input
         ev_b_y[:, hidden_size:(2 * hidden_size), :] += base
@@ -100,7 +103,7 @@ class EProp1(torch.autograd.Function):
 
     @staticmethod
     # grad_ev_ih and grad_ev_hh should always be None
-    def backward(ctx, grad_hy, grad_cy, grad_ev_w_ih, grad_ev_w_hh, grad_et_b, forgetgate_y):
+    def backward(ctx, grad_hy, grad_cy, grad_ev_w_ih, grad_ev_w_hh, grad_ev_b, grad_forgetgate_y):
         et_w_ih_y, et_w_hh_y, et_b_y = ctx.intermediate_results
 
         tmp_grad_hy = grad_hy.unsqueeze(2).repeat(1, 4, 1)
@@ -109,5 +112,8 @@ class EProp1(torch.autograd.Function):
         grad_weight_hh = et_w_hh_y * tmp_grad_hy
         grad_bias = et_b_y * tmp_grad_hy
 
-        # grad_input, grad_ev_ih, grad_ev_hh, grad_hx, grad_cx, grad_weight_ih, grad_weight_hh, grad_bias_ih, grad_bias_hh
+        #print("Grad cell state: {}".format(grad_cy.shape))
+        #print("Grad output: {}".format(grad_hy.shape))
+
+        # grad_ev_ih, grad_ev_hh, grad_ev_b, grad_forgetgate_x, grad_input, grad_hx, grad_cx, grad_weight_ih, grad_weight_hh, grad_bias_ih, grad_bias_hh
         return None, None, None, None, None, None, None, grad_weight_ih, grad_weight_hh, grad_bias.squeeze(), grad_bias.squeeze()
