@@ -5,6 +5,82 @@ from util import to_device
 
 class EProp1(torch.autograd.Function):
     @staticmethod
+    def calculate_eligibility_trace(
+            ones,
+            ev_w_ih_y,
+            ev_w_hh_y,
+            ev_b_y,
+            input,
+            outgate,
+            hx,
+            cy,
+            batch_size,
+            input_size,
+            hidden_size):
+        # ... and eligibility traces
+        et_w_ih_y = to_device(torch.Tensor(batch_size, 4 * hidden_size, input_size))
+        et_w_hh_y = to_device(torch.Tensor(batch_size, 4 * hidden_size, hidden_size))
+        et_b_y = to_device(torch.Tensor(batch_size, 4 * hidden_size, 1))
+
+        # calculate eligibility traces by multiplying the eligibility vectors with the outgate
+        tmp_outgate = outgate.repeat(1, 3, 1)
+        et_w_ih_y[:, :3 * hidden_size, :] = ev_w_ih_y * tmp_outgate
+        et_w_hh_y[:, :3 * hidden_size, :] = ev_w_hh_y * tmp_outgate
+        et_b_y[:, :3 * hidden_size, :] = ev_b_y * tmp_outgate
+        
+        # The gradient of the output gate is only dependent on the observable state
+        # => just use normal gradient calculation of dE/dh * dh/dweight 
+        # => calculate second part of that equation now for input to hidden, hidden to hidden 
+        #    and bias connections and multiply in the backward pass
+        base = outgate * (ones - outgate) * cy.unsqueeze(2)
+        et_w_hh_y[:, (3 * hidden_size):(4 * hidden_size)] = base * hx
+        et_w_ih_y[:, (3 * hidden_size):(4 * hidden_size)] = base * input
+        et_b_y[:, (3 * hidden_size):(4 * hidden_size)] = base
+
+        return et_w_ih_y, et_w_hh_y, et_b_y
+
+    @staticmethod
+    def calculate_eligibility_vector(
+            ones,
+            ev_w_ih_x,
+            ev_w_hh_x,
+            ev_b_x,
+            input,
+            ingate, 
+            cellgate,
+            forgetgate_y,
+            forgetgate_x,
+            hx,
+            cx,
+            hidden_size):
+        # the new eligibility vectors ...
+        ev_w_ih_y = ev_w_ih_x.clone() * forgetgate_x
+        ev_w_hh_y = ev_w_hh_x.clone() * forgetgate_x
+        ev_b_y = ev_b_x.clone() * forgetgate_x
+
+        # ingate
+        base = ingate * (ones - ingate) * cellgate
+        ev_w_hh_y[:, :hidden_size, :] += base * hx
+        ev_w_ih_y[:, :hidden_size, :] += base * input
+        ev_b_y[:, :hidden_size, :] += base
+        
+        # forgetgate
+        #base = forgetgate_y * (ones - forgetgate_y) * cellgate
+        base = forgetgate_y * (ones - forgetgate_y) * cx
+        ev_w_hh_y[:, hidden_size:(2 * hidden_size), :] += base * hx
+        ev_w_ih_y[:, hidden_size:(2 * hidden_size), :] += base * input
+        ev_b_y[:, hidden_size:(2 * hidden_size), :] += base
+
+        # cellgate
+        base = ingate * (ones - cellgate**2)
+        ev_w_hh_y[:, (2 * hidden_size):(3 * hidden_size), :] += base * hx
+        ev_w_ih_y[:, (2 * hidden_size):(3 * hidden_size), :] += base * input
+        ev_b_y[:, (2 * hidden_size):(3 * hidden_size), :] += base
+        
+        return ev_w_ih_y, ev_w_hh_y, ev_b_y
+        
+
+    @staticmethod
     def forward(
             ctx, 
             ev_w_ih_x,
@@ -48,53 +124,35 @@ class EProp1(torch.autograd.Function):
         hx = hx.unsqueeze(2)
         cx = cx.unsqueeze(2)
 
-        forgetgate_x = forgetgate_x.repeat(1, 3, 1)
-
-        # the new eligibility vectors ...
-        ev_w_ih_y = ev_w_ih_x.clone() * forgetgate_x
-        ev_w_hh_y = ev_w_hh_x.clone() * forgetgate_x
-        ev_b_y = ev_b_x.clone() * forgetgate_x
-
-        # ... and eligibility traces
-        et_w_ih_y = to_device(torch.Tensor(batch_size, 4 * hidden_size, input_size))
-        et_w_hh_y = to_device(torch.Tensor(batch_size, 4 * hidden_size, hidden_size))
-        et_b_y = to_device(torch.Tensor(batch_size, 4 * hidden_size, 1))
-
+        forgetgate_x = forgetgate_x.repeat(1, 3, 1)        
         ones = to_device(torch.ones(ingate.size()))
 
-        # ingate
-        base = ingate * (ones - ingate) * cellgate
-        ev_w_hh_y[:, :hidden_size, :] += base * hx
-        ev_w_ih_y[:, :hidden_size, :] += base * input
-        ev_b_y[:, :hidden_size, :] += base
-        
-        # forgetgate
-        #base = forgetgate_y * (ones - forgetgate_y) * cellgate
-        base = forgetgate_y * (ones - forgetgate_y) * cx
-        ev_w_hh_y[:, hidden_size:(2 * hidden_size), :] += base * hx
-        ev_w_ih_y[:, hidden_size:(2 * hidden_size), :] += base * input
-        ev_b_y[:, hidden_size:(2 * hidden_size), :] += base
+        ev_w_ih_y, ev_w_hh_y, ev_b_y = EProp1.calculate_eligibility_vector(
+            ones, 
+            ev_w_ih_x, 
+            ev_w_hh_x, 
+            ev_b_x, 
+            input, 
+            ingate, 
+            cellgate, 
+            forgetgate_y, 
+            forgetgate_x, 
+            hx, 
+            cx, 
+            hidden_size)
 
-        # cellgate
-        base = ingate * (ones - cellgate**2)
-        ev_w_hh_y[:, (2 * hidden_size):(3 * hidden_size), :] += base * hx
-        ev_w_ih_y[:, (2 * hidden_size):(3 * hidden_size), :] += base * input
-        ev_b_y[:, (2 * hidden_size):(3 * hidden_size), :] += base
-
-        # calculate eligibility traces by multiplying the eligibility vectors with the outgate
-        tmp_outgate = outgate.repeat(1, 3, 1)
-        et_w_ih_y[:, :3 * hidden_size, :] = ev_w_ih_y * tmp_outgate
-        et_w_hh_y[:, :3 * hidden_size, :] = ev_w_hh_y * tmp_outgate
-        et_b_y[:, :3 * hidden_size, :] = ev_b_y * tmp_outgate
-        
-        # The gradient of the output gate is only dependent on the observable state
-        # => just use normal gradient calculation of dE/dh * dh/dweight 
-        # => calculate second part of that equation now for input to hidden, hidden to hidden 
-        #    and bias connections and multiply in the backward pass
-        base = outgate * (ones - outgate) * cy.unsqueeze(2)
-        et_w_hh_y[:, (3 * hidden_size):(4 * hidden_size)] = base * hx
-        et_w_ih_y[:, (3 * hidden_size):(4 * hidden_size)] = base * input
-        et_b_y[:, (3 * hidden_size):(4 * hidden_size)] = base
+        et_w_ih_y, et_w_hh_y, et_b_y = EProp1.calculate_eligibility_trace(
+            ones, 
+            ev_w_ih_y, 
+            ev_w_hh_y, 
+            ev_b_y,
+            input,
+            outgate, 
+            hx, 
+            cy, 
+            batch_size,
+            input_size,
+            hidden_size)
 
         ctx.intermediate_results = et_w_ih_y, et_w_hh_y, et_b_y
 
@@ -105,14 +163,12 @@ class EProp1(torch.autograd.Function):
     def backward(ctx, grad_hy, grad_cy, grad_ev_w_ih, grad_ev_w_hh, grad_ev_b, grad_forgetgate_y):
         et_w_ih_y, et_w_hh_y, et_b_y = ctx.intermediate_results
 
+        # Approximate dE/dh by substituting only with local error (\partial E)/(\partial h)
         tmp_grad_hy = grad_hy.unsqueeze(2).repeat(1, 4, 1)
 
         grad_weight_ih = et_w_ih_y * tmp_grad_hy
         grad_weight_hh = et_w_hh_y * tmp_grad_hy
         grad_bias = et_b_y * tmp_grad_hy
-
-        #print("Grad cell state: {}".format(grad_cy.shape))
-        #print("Grad output: {}".format(grad_hy.shape))
 
         # grad_ev_ih, grad_ev_hh, grad_ev_b, grad_forgetgate_x, grad_input, grad_hx, grad_cx, grad_weight_ih, grad_weight_hh, grad_bias_ih, grad_bias_hh
         return None, None, None, None, None, None, None, grad_weight_ih, grad_weight_hh, grad_bias.squeeze(), grad_bias.squeeze()
