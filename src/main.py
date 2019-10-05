@@ -1,6 +1,6 @@
 import argparse
 
-from lstm_jit import MemoryNetwork, StoreRecallNetwork, BaseNetwork
+from models import MemoryNetwork, StoreRecallNetwork, BaseNetwork
 import torch
 import torch.nn as nn
 import torch.optim as optim
