@@ -16,9 +16,9 @@ def generate_single_lable_memory_data(num_observations, sequence_length, time_de
     data = np.zeros(size)    
     labels = np.zeros((num_observations, 1))
     for i, row in enumerate(data):
-        signal = np.random.randint(1, MEM_NUM_CLASSES, 1)[0]
+        signal = np.random.randint(1, MEM_NUM_CLASSES, 1)
         last_possible_signal = sequence_length if not time_delta else sequence_length - time_delta
-        column = np.random.randint(0, last_possible_signal, 1)[0]
+        column = np.random.randint(0, last_possible_signal, 1)
         row[column] = signal
         labels[i] = signal - 1
 
@@ -34,9 +34,9 @@ def generate_multi_lable_memory_data(num_observations, sequence_length, time_del
     data = np.zeros(size)    
     labels = np.zeros((num_observations, sequence_length))
     for i, row in enumerate(data):
-        signal = np.random.randint(1, MEM_NUM_CLASSES, 1)[0]
+        signal = np.random.randint(1, MEM_NUM_CLASSES, 1)
         last_possible_signal = sequence_length if not time_delta else sequence_length - time_delta
-        column = np.random.randint(0, last_possible_signal, 1)[0]
+        column = np.random.randint(0, last_possible_signal, 1)
         
         row[column] = signal
         labels[i, :-1] = 0

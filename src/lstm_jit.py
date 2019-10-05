@@ -208,10 +208,10 @@ class BaseNetwork(nn.Module):
         return predictions
 
     def save(self, path, epoch):
-        torch.save(self.state_dict(), '{}{}_{}.pth'.format(path, self.model_name, epoch, '.pth'))
+        torch.save(self.state_dict(), '{}{}_{}.pth'.format(path, self.model_name, epoch))
 
     def load(self, path):
-        self.load_state_dict(torch.load('{}{}{}'.format(path, self.model_name, '.pth')))
+        self.load_state_dict(torch.load('{}{}.pth'.format(path, self.model_name)))
         self.eval()
 
 
