@@ -1,6 +1,6 @@
 import argparse
 
-from models import MemoryNetwork, StoreRecallNetwork, BaseNetwork
+from models import BPTT_LSTM, EPROP1_LSTM
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -13,8 +13,12 @@ import config
 
 import logging
 
-STORE_RECALL = 'S_R'
-MEMORY = 'MEM'
+STORE_RECALL = "S_R"
+MEMORY = "MEM"
+
+BPTT = "BPTT"
+EPROP_1 = "EPROP1"
+
 
 def get_batched_data(data, labels):
     permutation = torch.randperm(data.size()[0])
@@ -55,21 +59,29 @@ def chose_task(memory_task, training_algorithm):
     # Chose the task and corresponding model:
     if memory_task == MEMORY:
         generate_data = generate_single_lable_memory_data
-        model = to_device(MemoryNetwork(
-            config.MEM_INPUT_SIZE, 
-            config.MEM_HIDEN_SIZE, 
-            config.MEM_NUM_CLASSES,
-            cell_type=training_algorithm))
+        input_size = config.MEM_INPUT_SIZE
+        hidden_size = config.MEM_HIDEN_SIZE 
+        num_classes = config.MEM_NUM_CLASSES
+        single_output = True
         loss_function = nn.CrossEntropyLoss()
     elif memory_task == STORE_RECALL:
         generate_data = generate_store_and_recall_data
-        model = to_device(StoreRecallNetwork(
-            config.SR_INPUT_SIZE, 
-            config.SR_HIDEN_SIZE, 
-            config.SR_NUM_CLASSES,
-            cell_type=training_algorithm))
+        input_size = config.SR_INPUT_SIZE
+        hidden_size = config.SR_HIDEN_SIZE 
+        num_classes = config.SR_NUM_CLASSES
+        single_output = False
         loss_function = nn.CrossEntropyLoss()
 
+    if training_algorithm == BPTT:
+        model_constructor = BPTT_LSTM
+    elif training_algorithm == EPROP_1:
+        model_constructor = EPROP1_LSTM
+    
+    model = to_device(model_constructor(
+            input_size,
+            hidden_size,
+            num_classes,
+            single_output=single_output))
     return generate_data, model, loss_function
 
 
@@ -135,9 +147,9 @@ def setup_logging(args):
 
     logging.info("----------------- Started Run -----------------")
     logging.info("Time: {}".format(datetime.now()))
-    if args.training_algorithm == BaseNetwork.BPTT:
+    if args.training_algorithm == BPTT:
         ta = "BPTT"
-    elif args.training_algorithm == BaseNetwork.EPROP_1:
+    elif args.training_algorithm == EPROP_1:
         ta = "EPROP_1"
 
     if args.memory_task == MEMORY:
@@ -152,7 +164,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--test', action='store_true', default=False)
     parser.add_argument('-m', '--memory_task', default=MEMORY, type=str)
-    parser.add_argument('-a', '--training_algorithm', default=BaseNetwork.BPTT, type=int)
+    parser.add_argument('-a', '--training_algorithm', default=BPTT, type=str)
     args = parser.parse_args()
 
     setup_logging(args)

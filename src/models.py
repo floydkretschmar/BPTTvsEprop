@@ -10,19 +10,14 @@ from eprop_func import EProp1
 
 
 class BaseNetwork(nn.Module):
-    BPTT = 0
-    EPROP_1 = 1
-    EPROP_2 = 2
-    EPROP_3 = 3
-
     def __init__(self, 
                  input_size, 
                  hidden_size, 
                  output_size, 
+                 lstm,
                  bias=True, 
                  batch_first=True, 
-                 single_output=True,
-                 cell_type=BPTT):
+                 single_output=True):
         super(BaseNetwork, self).__init__()
         self.output_size = output_size
         self.hidden_size = hidden_size
@@ -30,13 +25,7 @@ class BaseNetwork(nn.Module):
         self.batch_first = batch_first
         self.single_output = single_output
 
-        # LSTM layer
-        if cell_type == BaseNetwork.BPTT:
-            self.lstm = lstm.LSTM(input_size, hidden_size, lstm.BPTTCell(input_size, hidden_size, bias)) 
-            self.model_name = 'LSTM_BPTT'
-        elif cell_type == BaseNetwork.EPROP_1:
-            self.lstm = lstm.EpropLSTM(input_size, hidden_size, lstm.EpropCell(input_size, hidden_size, bias))
-            self.model_name = 'LSTM_EPROP'
+        self.lstm = lstm
 
         # LSTM to output mapping
         self.dense = nn.Linear(hidden_size, output_size, bias)
@@ -62,27 +51,53 @@ class BaseNetwork(nn.Module):
         predictions = dense_out
         return predictions
 
+    def get_name(self):
+        return "BaseNetwork"
+
     def save(self, path, epoch):
-        torch.save(self.state_dict(), '{}{}_{}.pth'.format(path, self.model_name, epoch))
+        torch.save(self.state_dict(), '{}{}_{}.pth'.format(path, self.get_name(), epoch))
 
     def load(self, path):
-        self.load_state_dict(torch.load('{}{}.pth'.format(path, self.model_name)))
+        self.load_state_dict(torch.load('{}{}.pth'.format(path, self.get_name())))
         self.eval()
 
-
-class MemoryNetwork(BaseNetwork):
+class BPTT_LSTM(BaseNetwork):
     def __init__(self, 
                  input_size, 
                  hidden_size, 
                  output_size, 
-                 cell_type=BaseNetwork.BPTT):
-        super(MemoryNetwork, self).__init__(input_size, hidden_size, output_size, cell_type=cell_type, single_output=True)
+                 bias=True, 
+                 batch_first=True, 
+                 single_output=True):
+        super(BPTT_LSTM, self).__init__(
+            input_size, 
+            hidden_size, 
+            output_size, 
+            lstm.LSTM(input_size, hidden_size, lstm.BPTTCell(input_size, hidden_size, bias)), 
+            bias=bias, 
+            batch_first=batch_first, 
+            single_output=single_output)
+            
+    def get_name(self):        
+        return "LSTM_BPTT"
 
 
-class StoreRecallNetwork(BaseNetwork):
+class EPROP1_LSTM(BaseNetwork):
     def __init__(self, 
                  input_size, 
                  hidden_size, 
                  output_size, 
-                 cell_type=BaseNetwork.BPTT):
-        super(StoreRecallNetwork, self).__init__(input_size, hidden_size, output_size, cell_type=cell_type, single_output=False)
+                 bias=True, 
+                 batch_first=True, 
+                 single_output=True):
+        super(EPROP1_LSTM, self).__init__(
+            input_size, 
+            hidden_size, 
+            output_size, 
+            lstm.EpropLSTM(input_size, hidden_size, lstm.EpropCell(input_size, hidden_size, bias)), 
+            bias=bias, 
+            batch_first=batch_first, 
+            single_output=single_output)
+
+    def get_name(self):        
+        return "LSTM_EPROP1"

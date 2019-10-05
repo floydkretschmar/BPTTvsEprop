@@ -34,7 +34,7 @@
             "request": "launch",
             "program": "${workspaceRoot}/src/main.py",
             "console": "integratedTerminal",
-            "args": ["--memory_task", "S_R", "-a", "1"]
+            "args": ["--memory_task", "S_R", "-a", "EPROP1"]
         },
         {
             "name": "Test Store Recall Task",
