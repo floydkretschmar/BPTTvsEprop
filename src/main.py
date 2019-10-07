@@ -20,55 +20,20 @@ BPTT = "BPTT"
 EPROP_1 = "EPROP1"
 
 
-def get_batched_data(data, labels):
-    permutation = torch.randperm(data.size()[0])
-    for i in range(0, data.size()[0], config.BATCH_SIZE):
-        indices = permutation[i:i + config.BATCH_SIZE]
-        yield data[indices], labels[indices]
-
-
-def format_pred_and_gt(pred, gt, memory_task):
-    if memory_task == STORE_RECALL:
-        pred = pred.view(-1, pred.size(2))
-        gt = gt.squeeze().view(-1)
-
-        # for store recall: only use the time steps in which data is actively
-        # recalled and IGNORE the output at all other steps
-        pred = pred[gt != 0]
-        gt = gt[gt != 0]
-    else:
-        gt = gt.squeeze()
-
-    return pred, gt
-
-
-def test(model, loss_function, generate_data, size_test_data, sequence_length, memory_task):
-    logging.info('----------------- Started Testing -----------------')
-    for delta in range(1, sequence_length):
-        test_X, test_Y = generate_data(size_test_data, sequence_length, time_delta=delta)
-        logging.info("Delta {}:".format(delta))
-        with torch.no_grad():
-            pred = model(test_X)
-            prediction, gt = format_pred_and_gt(pred, test_Y, args.memory_task)
-            loss = loss_function(prediction, gt)
-
-            logging.info('Loss: {}'.format(loss))
-
-
 def chose_task(memory_task, training_algorithm):
     # Chose the task and corresponding model:
     if memory_task == MEMORY:
         generate_data = generate_single_lable_memory_data
         input_size = config.MEM_INPUT_SIZE
         hidden_size = config.MEM_HIDEN_SIZE 
-        num_classes = config.MEM_NUM_CLASSES
+        output_size = config.MEM_NUM_CLASSES
         single_output = True
         loss_function = nn.CrossEntropyLoss()
     elif memory_task == STORE_RECALL:
         generate_data = generate_store_and_recall_data
         input_size = config.SR_INPUT_SIZE
         hidden_size = config.SR_HIDEN_SIZE 
-        num_classes = config.SR_NUM_CLASSES
+        output_size = config.SR_NUM_CLASSES + 1
         single_output = False
         loss_function = nn.CrossEntropyLoss()
 
@@ -80,54 +45,31 @@ def chose_task(memory_task, training_algorithm):
     model = to_device(model_constructor(
             input_size,
             hidden_size,
-            num_classes,
+            output_size,
             single_output=single_output))
     return generate_data, model, loss_function
 
 
-def main(args):
-    generate_data, model, loss_function = chose_task(args.memory_task, args.training_algorithm)
+def format_pred_and_gt(pred, gt, memory_task):
+    if memory_task == STORE_RECALL:
+        pred = pred.view(-1, pred.size(2))
+        gt = gt.squeeze().view(-1)
 
-    if args.test:
-        model.load(config.LOAD_PATH)
+        # for store recall: only use the time steps in which data is actively
+        # recalled and IGNORE the output at all other steps
+        #pred = pred[gt != 0]
+        #gt = gt[gt != 0]
+    else:
+        gt = gt.squeeze()
 
-    if not args.test:
-        # Use negative log-likelihood and ADAM for training
-        optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
+    return pred, gt
 
-        # data generation is dependend on the training task
-        train_X, train_Y = generate_data(config.TRAIN_SIZE, config.SEQ_LENGTH)
-        training_results = []
 
-        logging.info('----------------- Started Training -----------------')
-        for epoch in range(1, config.NUM_EPOCHS + 1):
-            start_time = time.time()
-            total_loss = 0
-            batch_num = 0
-
-            for batch_x, batch_y in get_batched_data(train_X, train_Y):
-                # reset gradient
-                optimizer.zero_grad()
-                prediction = model(batch_x)
-
-                prediction, gt = format_pred_and_gt(prediction, batch_y, args.memory_task)
-                
-                # Compute the loss, gradients, and update the parameters
-                loss = loss_function(prediction, gt)
-                loss.backward()
-                optimizer.step()
-                
-                total_loss += loss.item()
-                batch_num += 1
-
-            result = 'Epoch {} \t => Loss: {} [Batch-Time = {}s]'.format(epoch, total_loss / batch_num, round(time.time() - start_time, 2))
-            logging.info(result)
-            
-            if epoch % 25 == 0:
-                logging.info("Saved model")
-                model.save(config.SAVE_PATH, epoch)
-
-    test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH, args.memory_task)
+def get_batched_data(data, labels):
+    permutation = torch.randperm(data.size()[0])
+    for i in range(0, data.size()[0], config.BATCH_SIZE):
+        indices = permutation[i:i + config.BATCH_SIZE]
+        yield data[indices], labels[indices]
 
 
 def setup_logging(args):
@@ -160,6 +102,64 @@ def setup_logging(args):
     logging.info("Task: {}".format(task))   
     logging.info("Training algorithm: {}".format(ta))
 
+
+def test(model, loss_function, generate_data, size_test_data, sequence_length, memory_task):
+    logging.info('----------------- Started Testing -----------------')
+    for delta in range(1, sequence_length):
+        test_X, test_Y = generate_data(size_test_data, sequence_length, time_delta=delta)
+        logging.info("Delta {}:".format(delta))
+        with torch.no_grad():
+            pred = model(test_X)
+            prediction, gt = format_pred_and_gt(pred, test_Y, args.memory_task)
+            loss = loss_function(prediction, gt)
+
+            logging.info('Loss: {}'.format(loss))
+
+
+def train(model, generate_data, loss_function, truncation_delta=0):
+    # Use negative log-likelihood and ADAM for training
+    optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
+
+    # data generation is dependend on the training task
+    train_X, train_Y = generate_data(config.TRAIN_SIZE, config.SEQ_LENGTH)
+    training_results = []
+
+    logging.info('----------------- Started Training -----------------')
+    for epoch in range(1, config.NUM_EPOCHS + 1):
+        start_time = time.time()
+        total_loss = 0
+        batch_num = 0
+
+        for batch_x, batch_y in get_batched_data(train_X, train_Y):
+            seq_len = batch_x.shape[1]
+            if truncation_delta > 0:
+                k = truncation_delta
+            else:
+                k = seq_len
+
+            for start in range(0, seq_len, k):
+                # reset gradient
+                optimizer.zero_grad()
+                prediction = model(batch_x[:,start:start+k,:])
+
+                prediction, gt = format_pred_and_gt(prediction, batch_y[:,start:start+k,:], args.memory_task)
+                
+                # Compute the loss, gradients, and update the parameters
+                loss = loss_function(prediction, gt)
+                loss.backward()
+                optimizer.step()
+                
+                total_loss += loss.item()
+                batch_num += 1
+
+        result = 'Epoch {} \t => Loss: {} [Batch-Time = {}s]'.format(epoch, total_loss / batch_num, round(time.time() - start_time, 2))
+        logging.info(result)
+        
+        if epoch % 25 == 0:
+            logging.info("Saved model")
+            model.save(config.SAVE_PATH, epoch)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--test', action='store_true', default=False)
@@ -168,6 +168,15 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     setup_logging(args)
-    main(args)
+
+    generate_data, model, loss_function = chose_task(args.memory_task, args.training_algorithm)
+
+    if args.test:
+        model.load(config.LOAD_PATH)
+
+    if not args.test:
+        train(model, generate_data, loss_function)
+
+    test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH, args.memory_task)
     
     logging.info("----------------- Finished Run -----------------")
