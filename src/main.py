@@ -53,14 +53,14 @@ def chose_task(memory_task, training_algorithm):
 def format_pred_and_gt(pred, gt, memory_task):
     if memory_task == STORE_RECALL:
         pred = pred.view(-1, pred.size(2))
-        gt = gt.squeeze().view(-1)
+        gt = gt.clone().squeeze().view(-1)
 
         # for store recall: only use the time steps in which data is actively
         # recalled and IGNORE the output at all other steps
         #pred = pred[gt != 0]
         #gt = gt[gt != 0]
     else:
-        gt = gt.squeeze()
+        gt = gt.clone().squeeze()
 
     return pred, gt
 
@@ -137,19 +137,35 @@ def train(model, generate_data, loss_function, truncation_delta=0):
             else:
                 k = seq_len
 
+            overall_pred = None
+            overall_gt = None
             for start in range(0, seq_len, k):
+                # if truncated, select the current truncation part
+                batch_x_part = batch_x[:,start:start+k,:]
+                batch_y_part = batch_y[:,start:start+k,:]
+
                 # reset gradient
                 optimizer.zero_grad()
-                prediction = model(batch_x[:,start:start+k,:])
 
-                prediction, gt = format_pred_and_gt(prediction, batch_y[:,start:start+k,:], args.memory_task)
+                prediction = model(batch_x_part)
+                prediction, gt = format_pred_and_gt(prediction, batch_y_part, args.memory_task)
                 
                 # Compute the loss, gradients, and update the parameters
                 loss = loss_function(prediction, gt)
                 loss.backward()
                 optimizer.step()
-                
-                total_loss += loss.item()
+
+                # save parts to get overall loss over entire sequence for batch
+                if type(overall_pred) == type(None):
+                    overall_gt = gt.clone()
+                    overall_pred = prediction.clone()
+                else:
+                    overall_gt = torch.cat([overall_gt, gt], dim=0)
+                    overall_pred = torch.cat([overall_pred, prediction], dim=0)
+
+            # calculate actual overall error for batch
+            with torch.no_grad():
+                total_loss += loss_function(overall_pred, overall_gt).item()
                 batch_num += 1
 
         result = 'Epoch {} \t => Loss: {} [Batch-Time = {}s]'.format(epoch, total_loss / batch_num, round(time.time() - start_time, 2))
@@ -175,7 +191,7 @@ if __name__ == '__main__':
         model.load(config.LOAD_PATH)
 
     if not args.test:
-        train(model, generate_data, loss_function)
+        train(model, generate_data, loss_function, truncation_delta=config.TRUNCATION_DELTA)
 
     test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH, args.memory_task)
     

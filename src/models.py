@@ -39,7 +39,7 @@ class BaseNetwork(nn.Module):
         initial_c = to_device(torch.zeros(input.size(1), self.hidden_size))
 
         # lstm and dense pass for prediction
-        lstm_out, _, _ = self.lstm(input, initial_h, initial_c)
+        lstm_out, _, _ = self.lstm(input, initial_h.detach(), initial_c.detach())
 
         # mapping to outputs
         if self.single_output:
@@ -101,3 +101,24 @@ class EPROP1_LSTM(BaseNetwork):
 
     def get_name(self):        
         return "LSTM_EPROP1"
+
+
+'''class EPROP1_LSTM(BaseNetwork):
+    def __init__(self, 
+                 input_size, 
+                 hidden_size, 
+                 output_size, 
+                 bias=True, 
+                 batch_first=True, 
+                 single_output=True):
+        super(EPROP1_LSTM, self).__init__(
+            input_size, 
+            hidden_size, 
+            output_size, 
+            lstm.EpropLSTM(input_size, hidden_size, lstm.EpropCell(input_size, hidden_size, eprop_func=EProp1.apply, bias=bias)), 
+            bias=bias, 
+            batch_first=batch_first, 
+            single_output=single_output)
+
+    def get_name(self):        
+        return "LSTM_EPROP1"'''
