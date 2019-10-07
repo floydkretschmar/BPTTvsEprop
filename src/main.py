@@ -1,6 +1,6 @@
 import argparse
 
-from models import BPTT_LSTM, EPROP1_LSTM
+from models import BPTT_LSTM, EPROP1_LSTM, EPROP3_LSTM
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -163,10 +163,12 @@ def train(model, generate_data, loss_function, truncation_delta=0):
                     overall_gt = torch.cat([overall_gt, gt], dim=0)
                     overall_pred = torch.cat([overall_pred, prediction], dim=0)
 
+            # reset model if necessary
+            model.reset()
+
             # calculate actual overall error for batch
-            with torch.no_grad():
-                total_loss += loss_function(overall_pred, overall_gt).item()
-                batch_num += 1
+            total_loss += loss_function(overall_pred, overall_gt).item()
+            batch_num += 1
 
         result = 'Epoch {} \t => Loss: {} [Batch-Time = {}s]'.format(epoch, total_loss / batch_num, round(time.time() - start_time, 2))
         logging.info(result)

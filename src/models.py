@@ -54,6 +54,9 @@ class BaseNetwork(nn.Module):
     def get_name(self):
         return "BaseNetwork"
 
+    def reset(self):
+        pass
+
     def save(self, path, epoch):
         torch.save(self.state_dict(), '{}{}_{}.pth'.format(path, self.get_name(), epoch))
 
@@ -103,7 +106,7 @@ class EPROP1_LSTM(BaseNetwork):
         return "LSTM_EPROP1"
 
 
-'''class EPROP1_LSTM(BaseNetwork):
+class EPROP3_LSTM(BaseNetwork):
     def __init__(self, 
                  input_size, 
                  hidden_size, 
@@ -111,7 +114,7 @@ class EPROP1_LSTM(BaseNetwork):
                  bias=True, 
                  batch_first=True, 
                  single_output=True):
-        super(EPROP1_LSTM, self).__init__(
+        super(EPROP3_LSTM, self).__init__(
             input_size, 
             hidden_size, 
             output_size, 
@@ -119,6 +122,40 @@ class EPROP1_LSTM(BaseNetwork):
             bias=bias, 
             batch_first=batch_first, 
             single_output=single_output)
+        self.initial_c = None
+        self.eligibility_vectors = None
+
+    def forward(self, input):
+        # prepare input and initial state
+        if self.batch_first:
+            input = input.permute(1, 0, 2)
+
+        batch_size = input.shape[1]
+        initial_h = to_device(torch.zeros(batch_size, self.hidden_size))
+
+        # initialize eligibility vectors only on first run
+        if type(self.eligibility_vectors) == type(None):
+            self.initial_c = to_device(torch.zeros(batch_size, self.hidden_size))
+            self.eligibility_vectors = [to_device(torch.zeros(batch_size, 3 * self.hidden_size, self.input_size)), 
+                to_device(torch.zeros(batch_size, 3 * self.hidden_size, self.hidden_size)),
+                to_device(torch.zeros(batch_size, 3 * self.hidden_size, 1))]
+
+        # lstm and dense pass for prediction
+        lstm_out, _, _, self.eligibility_vectors = self.lstm(input, initial_h.detach(), self.initial_c.detach(), self.eligibility_vectors)
+
+        # mapping to outputs
+        if self.single_output:
+            lstm_out = lstm_out[-1, :, :]       
+        else:
+            lstm_out = lstm_out.permute(1, 0, 2)
+            
+        dense_out = self.dense(lstm_out)    
+        predictions = dense_out
+        return predictions
 
     def get_name(self):        
-        return "LSTM_EPROP1"'''
+        return "LSTM_EPROP3"
+
+    def reset(self):
+        self.initial_c = None
+        self.eligibility_vectors = None

@@ -84,7 +84,7 @@ class EpropCell(LSTMCell):
         return hy, hy, cy, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate
 
 
-class LSTM(jit.ScriptModule):
+class LSTM(nn.Module):
     def __init__(self, input_size, hidden_size, cell):
         super(LSTM, self).__init__()
         self.cell = cell
@@ -93,10 +93,9 @@ class LSTM(jit.ScriptModule):
         # input (seq_len x batch_size x input_size)
         # initial_hidden (batch x hidden_size)
         # initial_state (batch x hidden_size)
-        return self.forward_core(input, initial_h, initial_c)
-
-    def forward_core(self, inputs, hx, cx):
-        inputs = inputs.unbind(0)
+        inputs = input.unbind(0)
+        hx = initial_h
+        cx = initial_c
         outputs = []
         for i in range(len(inputs)):
             out, hx, cx = self.cell(inputs[i], hx, cx)
@@ -105,19 +104,37 @@ class LSTM(jit.ScriptModule):
         return torch.stack(outputs), hx, cx
 
 
-class EpropLSTM(LSTM):
-    def forward_core(self, inputs, hx, cx):
+class EpropLSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, cell):
+        super(EpropLSTM, self).__init__()
+        self.cell = cell
+
+    def forward(
+            self, 
+            input, 
+            initial_h, 
+            initial_c,
+            eligibility_vectors=[]):
         # input (seq_len x batch_size x input_size)
         # initial_hidden (batch x hidden_size)
         # initial_state (batch x hidden_size)
-        input_size = inputs.size(2)
-        hidden_size = hx.size(1)
-        batch_size = inputs.size(1)
-        inputs = inputs.unbind(0)
+        inputs = input.unbind(0)
+        input_size = input.size(2)
+        hidden_size = initial_h.size(1)
+        batch_size = input.size(1)
+        hx = initial_h
+        cx = initial_c
 
-        ev_w_ih_x = to_device(torch.zeros(batch_size, 3 * hidden_size, input_size))
-        ev_w_hh_x = to_device(torch.zeros(batch_size, 3 * hidden_size, hidden_size))
-        ev_b_x = to_device(torch.zeros(batch_size, 3 * hidden_size, 1))
+        if len(eligibility_vectors) == 0:
+            ev_w_ih_x = to_device(torch.zeros(batch_size, 3 * hidden_size, input_size))
+            ev_w_hh_x = to_device(torch.zeros(batch_size, 3 * hidden_size, hidden_size))
+            ev_b_x = to_device(torch.zeros(batch_size, 3 * hidden_size, 1))
+        else:
+            ev_w_ih_x = eligibility_vectors[0]
+            ev_w_hh_x = eligibility_vectors[1]
+            ev_b_x = eligibility_vectors[2]
+
+
         forgetgate = to_device(torch.zeros(batch_size, hidden_size, 1))
 
         outputs = []
@@ -125,4 +142,4 @@ class EpropLSTM(LSTM):
             out, hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate = self.cell(inputs[i], hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate)
             outputs += [out]
 
-        return torch.stack(outputs), hx, cx
+        return torch.stack(outputs), hx, cx, [ev_w_ih_x, ev_w_hh_x, ev_b_x]
