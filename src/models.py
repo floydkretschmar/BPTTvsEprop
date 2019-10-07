@@ -94,7 +94,7 @@ class EPROP1_LSTM(BaseNetwork):
             input_size, 
             hidden_size, 
             output_size, 
-            lstm.EpropLSTM(input_size, hidden_size, lstm.EpropCell(input_size, hidden_size, bias)), 
+            lstm.EpropLSTM(input_size, hidden_size, lstm.EpropCell(input_size, hidden_size, eprop_func=EProp1.apply, bias=bias)), 
             bias=bias, 
             batch_first=batch_first, 
             single_output=single_output)

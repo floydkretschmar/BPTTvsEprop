@@ -5,7 +5,6 @@ import torch.jit as jit
 import math
 
 from util import to_device
-from eprop_func import EProp1
 
 """ 
 Custom LSTM implementation using jit adopted from:
@@ -64,11 +63,12 @@ class BPTTCell(LSTMCell):
 
 
 class EpropCell(LSTMCell):
-    def __init__(self, input_size, hidden_size, bias=True):
+    def __init__(self, input_size, hidden_size, eprop_func, bias=True):
         super(EpropCell, self).__init__(input_size, hidden_size, bias)
+        self.eprop_func = eprop_func
 
     def forward(self, input, hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate):
-        hy, cy, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate = EProp1.apply(
+        hy, cy, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate = self.eprop_func(
             ev_w_ih_x,
             ev_w_hh_x,
             ev_b_x,
