@@ -36,17 +36,17 @@ class BaseNetwork(nn.Module):
         if self.batch_first:
             input = input.permute(1, 0, 2)
         
-        lstm_out = self.forward_core(input)
+        return self.forward_core(input)
 
+    def forward_dense(self, lstm_out):
         # mapping to outputs
         if self.single_output:
             lstm_out = lstm_out[-1, :, :]       
         else:
             lstm_out = lstm_out.permute(1, 0, 2)
             
-        dense_out = self.dense(lstm_out)    
-        predictions = dense_out
-        return predictions
+        dense_out = self.dense(lstm_out)
+        return dense_out 
 
     def forward_core(self, input):
         initial_h = to_device(torch.zeros(input.size(1), self.hidden_size))
@@ -54,7 +54,8 @@ class BaseNetwork(nn.Module):
 
         # lstm and dense pass for prediction
         lstm_out = self.lstm(input, initial_h.detach(), initial_c.detach())[0]
-        return lstm_out
+        dense_out = self.forward_dense(lstm_out)
+        return dense_out
 
     def get_name(self):
         return "BaseNetwork"
@@ -161,7 +162,7 @@ class EPROP3_LSTM(BaseNetwork):
         SyntheticGradient.apply(last_c, synth_grad)
 
         # return both the output as well as the synthetic gradient 
-        return lstm_out, synth_grad
+        return self.forward_dense(lstm_out), synth_grad
 
     def get_name(self):        
         return "LSTM_EPROP3"

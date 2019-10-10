@@ -18,6 +18,7 @@ MEMORY = "MEM"
 
 BPTT = "BPTT"
 EPROP_1 = "EPROP1"
+EPROP_3 = "EPROP3"
 
 
 def chose_task(memory_task, training_algorithm):
@@ -39,26 +40,26 @@ def chose_task(memory_task, training_algorithm):
 
     if training_algorithm == BPTT:
         model_constructor = BPTT_LSTM
+        train_function = lambda optimizer, loss_func, batch_x, batch_y : train_bptt(optimizer, loss_func, batch_x, batch_y, memory_task)
     elif training_algorithm == EPROP_1:
         model_constructor = EPROP1_LSTM
+        train_function = lambda optimizer, loss_func, batch_x, batch_y : train_bptt(optimizer, loss_func, batch_x, batch_y, memory_task)
+    elif training_algorithm == EPROP_3:
+        model_constructor = EPROP3_LSTM
+        train_function = lambda optimizer, loss_func, batch_x, batch_y : train_eprop3(optimizer, loss_func, batch_x, batch_y, memory_task)
     
     model = to_device(model_constructor(
             input_size,
             hidden_size,
             output_size,
             single_output=single_output))
-    return generate_data, model, loss_function
+    return generate_data, model, loss_function, train_function
 
 
 def format_pred_and_gt(pred, gt, memory_task):
     if memory_task == STORE_RECALL:
         pred = pred.view(-1, pred.size(2))
         gt = gt.clone().squeeze().view(-1)
-
-        # for store recall: only use the time steps in which data is actively
-        # recalled and IGNORE the output at all other steps
-        #pred = pred[gt != 0]
-        #gt = gt[gt != 0]
     else:
         gt = gt.clone().squeeze()
 
@@ -115,8 +116,50 @@ def test(model, loss_function, generate_data, size_test_data, sequence_length, m
 
             logging.info('Loss: {}'.format(loss))
 
+def train_eprop3(optimizer, loss_function, batch_x, batch_y, memory_task):
+    # reset gradient
+    optimizer.zero_grad()
 
-def train(model, generate_data, loss_function, truncation_delta=0):
+    prediction = model(batch_x)
+    prediction, gt = format_pred_and_gt(prediction, batch_y, memory_task)
+    
+    # Compute the loss, gradients, and update the parameters
+    loss = loss_function(prediction, gt)
+    loss.backward()
+    optimizer.step()
+    return loss.item()
+
+def train_bptt(optimizer, loss_function, batch_x, batch_y, memory_task):
+    # reset gradient
+    optimizer.zero_grad()
+
+    prediction = model(batch_x)
+    prediction, gt = format_pred_and_gt(prediction, batch_y, memory_task)
+    
+    # Compute the loss, gradients, and update the parameters
+    loss = loss_function(prediction, gt)
+    loss.backward()
+    optimizer.step()
+    return loss.item()
+
+def train_truncated(optimizer, loss_function, batch_x, batch_y, training_func, truncation_delta):
+    seq_len = batch_x.shape[1]
+
+    total_loss = 0
+    for i, start in enumerate(range(0, seq_len, truncation_delta)):
+        # if truncated, select the current truncation part
+        batch_x_part = batch_x[:,start:start+truncation_delta,:]
+        batch_y_part = batch_y[:,start:start+truncation_delta,:]
+
+        loss = training_func(batch_x, batch_y)
+        total_loss += loss
+
+    # reset model if necessary
+    model.reset()
+    return total_loss / i
+
+
+def train(model, generate_data, loss_function, train_func, truncation_delta=0):
     # Use negative log-likelihood and ADAM for training
     optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
 
@@ -131,43 +174,17 @@ def train(model, generate_data, loss_function, truncation_delta=0):
         batch_num = 0
 
         for batch_x, batch_y in get_batched_data(train_X, train_Y):
-            seq_len = batch_x.shape[1]
             if truncation_delta > 0:
-                k = truncation_delta
+                total_loss += train_truncated(
+                    optimizer, 
+                    loss_function, 
+                    batch_x, 
+                    batch_y, 
+                    lambda trunc_batch_x, trunc_batch_y : train_func(optimizer, loss_function, trunc_batch_x, trunc_batch_y), 
+                    truncation_delta)
             else:
-                k = seq_len
+                total_loss += train_func(optimizer, loss_function, batch_x, batch_y)
 
-            overall_pred = None
-            overall_gt = None
-            for start in range(0, seq_len, k):
-                # if truncated, select the current truncation part
-                batch_x_part = batch_x[:,start:start+k,:]
-                batch_y_part = batch_y[:,start:start+k,:]
-
-                # reset gradient
-                optimizer.zero_grad()
-
-                prediction = model(batch_x_part)
-                prediction, gt = format_pred_and_gt(prediction, batch_y_part, args.memory_task)
-                
-                # Compute the loss, gradients, and update the parameters
-                loss = loss_function(prediction, gt)
-                loss.backward()
-                optimizer.step()
-
-                # save parts to get overall loss over entire sequence for batch
-                if type(overall_pred) == type(None):
-                    overall_gt = gt.clone()
-                    overall_pred = prediction.clone()
-                else:
-                    overall_gt = torch.cat([overall_gt, gt], dim=0)
-                    overall_pred = torch.cat([overall_pred, prediction], dim=0)
-
-            # reset model if necessary
-            model.reset()
-
-            # calculate actual overall error for batch
-            total_loss += loss_function(overall_pred, overall_gt).item()
             batch_num += 1
 
         result = 'Epoch {} \t => Loss: {} [Batch-Time = {}s]'.format(epoch, total_loss / batch_num, round(time.time() - start_time, 2))
@@ -187,13 +204,13 @@ if __name__ == '__main__':
 
     setup_logging(args)
 
-    generate_data, model, loss_function = chose_task(args.memory_task, args.training_algorithm)
+    generate_data, model, loss_function, train_function = chose_task(args.memory_task, args.training_algorithm)
 
     if args.test:
         model.load(config.LOAD_PATH)
 
     if not args.test:
-        train(model, generate_data, loss_function, truncation_delta=config.TRUNCATION_DELTA)
+        train(model, generate_data, loss_function, train_function, truncation_delta=config.TRUNCATION_DELTA)
 
     test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH, args.memory_task)
     
