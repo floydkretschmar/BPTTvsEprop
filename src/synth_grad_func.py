@@ -12,12 +12,13 @@ class SyntheticGradient(torch.autograd.Function):
     def forward(
             ctx, 
             last_c,
+            output,
             synth_grad):
         ctx.intermediate_results = synth_grad
-        return last_c, synth_grad
+        return last_c, output, synth_grad
 
     @staticmethod
     # grad_ev_ih and grad_ev_hh should always be None
-    def backward(ctx, grad_last_h, grad_synth_grad):
+    def backward(ctx, grad_last_c, grad_output, grad_synth_grad):
         synth_grad = ctx.intermediate_results
-        return synth_grad, None
+        return synth_grad, grad_output, None
