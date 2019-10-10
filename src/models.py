@@ -7,6 +7,7 @@ import math
 import lstm
 from util import to_device
 from eprop_func import EProp1
+from synth_grad_func import SyntheticGradient
 
 
 class BaseNetwork(nn.Module):
@@ -48,12 +49,11 @@ class BaseNetwork(nn.Module):
         return predictions
 
     def forward_core(self, input):
-
         initial_h = to_device(torch.zeros(input.size(1), self.hidden_size))
         initial_c = to_device(torch.zeros(input.size(1), self.hidden_size))
 
         # lstm and dense pass for prediction
-        lstm_out, _, _ = self.lstm(input, initial_h.detach(), initial_c.detach())
+        lstm_out = self.lstm(input, initial_h.detach(), initial_c.detach())[0]
         return lstm_out
 
     def get_name(self):
@@ -127,6 +127,16 @@ class EPROP3_LSTM(BaseNetwork):
             bias=bias, 
             batch_first=batch_first, 
             single_output=single_output)
+
+        # sythetic gradient that tries to emulate dE/d(s_j^{tm+1})
+        self.synthetic_gradient_net = nn.Sequential(nn.Linear(self.output, 512),
+                                nn.ReLU(),
+                                nn.Linear(512, 256),
+                                nn.ReLU(),
+                                nn.Linear(256, 128),
+                                nn.ReLU(),
+                                nn.Linear(128, self.hidden_size))
+
         self.initial_c = None
         self.eligibility_vectors = None
 
@@ -142,8 +152,16 @@ class EPROP3_LSTM(BaseNetwork):
                 to_device(torch.zeros(batch_size, 3 * self.hidden_size, 1))]
 
         # lstm and dense pass for prediction
-        lstm_out, _, _, self.eligibility_vectors = self.lstm(input, initial_h.detach(), self.initial_c.detach(), self.eligibility_vectors)
-        return lstm_out
+        lstm_out, _, last_c, self.eligibility_vectors = self.lstm(input, initial_h.detach(), self.initial_c.detach(), self.eligibility_vectors)
+
+        # take the last output of the network to let the synth grad network predict the synthetic gradient
+        synth_grad = self.synthetic_gradient_net(lstm_out[-1, :, :])
+
+        # set the gradient of the last internal state equal to the synthetic gradient
+        SyntheticGradient.apply(last_c, synth_grad)
+
+        # return both the output as well as the synthetic gradient 
+        return lstm_out, synth_grad
 
     def get_name(self):        
         return "LSTM_EPROP3"
