@@ -53,7 +53,7 @@ class BaseNetwork(nn.Module):
         initial_c = to_device(torch.zeros(input.size(1), self.hidden_size))
 
         # lstm and dense pass for prediction
-        lstm_out = self.lstm(input, initial_h.detach(), initial_c.detach())[0]
+        lstm_out, _ = self.lstm(input, initial_h, initial_c)
         dense_out = self.forward_dense(lstm_out)
         return dense_out
 
@@ -130,7 +130,7 @@ class EPROP3_LSTM(BaseNetwork):
             single_output=single_output)
 
         # sythetic gradient that tries to emulate dE/d(s_j^{tm+1})
-        self.synthetic_gradient_net = nn.Sequential(nn.Linear(self.output, 512),
+        self.synthetic_gradient_net = nn.Sequential(nn.Linear(self.output_size, 512),
                                 nn.ReLU(),
                                 nn.Linear(512, 256),
                                 nn.ReLU(),
@@ -147,22 +147,29 @@ class EPROP3_LSTM(BaseNetwork):
 
         # initialize eligibility vectors only on first run
         if type(self.eligibility_vectors) == type(None):
-            self.initial_c = to_device(torch.zeros(batch_size, self.hidden_size))
-            self.eligibility_vectors = [to_device(torch.zeros(batch_size, 3 * self.hidden_size, self.input_size)), 
-                to_device(torch.zeros(batch_size, 3 * self.hidden_size, self.hidden_size)),
-                to_device(torch.zeros(batch_size, 3 * self.hidden_size, 1))]
+            self.initial_c = to_device(torch.zeros(batch_size, self.hidden_size)).requires_grad_()
+            self.eligibility_vectors = [to_device(torch.zeros(batch_size, 3 * self.hidden_size, self.input_size, requires_grad=False)), 
+                to_device(torch.zeros(batch_size, 3 * self.hidden_size, self.hidden_size, requires_grad=False)),
+                to_device(torch.zeros(batch_size, 3 * self.hidden_size, 1, requires_grad=False))]
 
+        old_initial_c = self.initial_c
         # lstm and dense pass for prediction
-        lstm_out, _, last_c, self.eligibility_vectors = self.lstm(input, initial_h.detach(), self.initial_c.detach(), self.eligibility_vectors)
+        lstm_out, self.initial_c, self.eligibility_vectors = self.lstm(input, initial_h, self.initial_c, self.eligibility_vectors)
+        lstm_out = self.forward_dense(lstm_out)
 
         # take the last output of the network to let the synth grad network predict the synthetic gradient
-        synth_grad = self.synthetic_gradient_net(lstm_out[-1, :, :])
+        synth_grad = self.synthetic_gradient_net(lstm_out[:, -1, :])
 
         # set the gradient of the last internal state equal to the synthetic gradient
-        SyntheticGradient.apply(last_c, synth_grad)
+        self.initial_c, lstm_out, synth_grad = SyntheticGradient.apply(self.initial_c, lstm_out, synth_grad)
+
+        # detach initial c ...
+        self.initial_c = self.initial_c.detach()
+        # ... and make sure to also detach eligibility vectors
+        self.eligibility_vectors = [self.eligibility_vectors[0].detach(), self.eligibility_vectors[1].detach(),self.eligibility_vectors[2].detach()]
 
         # return both the output as well as the synthetic gradient 
-        return self.forward_dense(lstm_out), synth_grad
+        return lstm_out, synth_grad, old_initial_c
 
     def get_name(self):        
         return "LSTM_EPROP3"

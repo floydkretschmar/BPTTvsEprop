@@ -29,12 +29,12 @@
             "args": ["--memory_task", "S_R"]
         },
         {
-            "name": "Train Store Recall Task Eprop",
+            "name": "Train Store Recall Task Eprop 3",
             "type": "python",
             "request": "launch",
             "program": "${workspaceRoot}/src/main.py",
             "console": "integratedTerminal",
-            "args": ["--memory_task", "S_R", "-a", "EPROP1"]
+            "args": ["--memory_task", "S_R", "-a", "EPROP3"]
         },
         {
             "name": "Test Store Recall Task",

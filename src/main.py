@@ -45,8 +45,18 @@ def chose_task(memory_task, training_algorithm):
         model_constructor = EPROP1_LSTM
         train_function = lambda optimizer, loss_func, batch_x, batch_y : train_bptt(optimizer, loss_func, batch_x, batch_y, memory_task)
     elif training_algorithm == EPROP_3:
-        model_constructor = EPROP3_LSTM
-        train_function = lambda optimizer, loss_func, batch_x, batch_y : train_eprop3(optimizer, loss_func, batch_x, batch_y, memory_task)
+        model_constructor = lambda in_size, h_size, o_size, single_output : EPROP3_LSTM(
+            in_size, 
+            h_size, 
+            o_size, 
+            single_output=single_output)
+        train_function = lambda optimizer, loss_func, batch_x, batch_y : train_eprop3(
+            optimizer, 
+            loss_func, 
+            batch_x, 
+            batch_y, 
+            memory_task, 
+            config.TRUNCATION_DELTA)
     
     model = to_device(model_constructor(
             input_size,
@@ -94,6 +104,8 @@ def setup_logging(args):
         ta = "BPTT"
     elif args.training_algorithm == EPROP_1:
         ta = "EPROP_1"
+    elif args.training_algorithm == EPROP_3:
+        ta = "EPROP_3"
 
     if args.memory_task == MEMORY:
         task = "Memory"
@@ -116,18 +128,36 @@ def test(model, loss_function, generate_data, size_test_data, sequence_length, m
 
             logging.info('Loss: {}'.format(loss))
 
-def train_eprop3(optimizer, loss_function, batch_x, batch_y, memory_task):
-    # reset gradient
-    optimizer.zero_grad()
+def train_eprop3(optimizer, loss_function, batch_x, batch_y, memory_task, truncation_delta):
+    seq_len = batch_x.shape[1]
 
-    prediction = model(batch_x)
-    prediction, gt = format_pred_and_gt(prediction, batch_y, memory_task)
-    
-    # Compute the loss, gradients, and update the parameters
-    loss = loss_function(prediction, gt)
-    loss.backward()
-    optimizer.step()
-    return loss.item()
+    real_grad_x = 0
+    total_loss = 0
+    for i, start in enumerate(range(0, seq_len, truncation_delta)):
+        # if truncated, select the current truncation part
+        batch_x_part = batch_x[:,start:start+truncation_delta,:]
+        batch_y_part = batch_y[:,start:start+truncation_delta,:]
+
+        # reset gradient
+        optimizer.zero_grad()
+
+        prediction, synth_grad_y, first_state = model(batch_x_part)
+        first_state.retain_grad()
+        pred, gt = format_pred_and_gt(prediction, batch_y_part, memory_task)
+        
+        # Compute the loss, gradients, and update the parameters
+        loss = loss_function(pred, gt)
+        loss.backward()
+
+        real_grad_x = first_state.grad
+
+        optimizer.step()
+        total_loss += loss.item()
+
+    # reset model
+    model.reset()
+
+    return total_loss / i
 
 def train_bptt(optimizer, loss_function, batch_x, batch_y, memory_task):
     # reset gradient
@@ -142,24 +172,8 @@ def train_bptt(optimizer, loss_function, batch_x, batch_y, memory_task):
     optimizer.step()
     return loss.item()
 
-def train_truncated(optimizer, loss_function, batch_x, batch_y, training_func, truncation_delta):
-    seq_len = batch_x.shape[1]
 
-    total_loss = 0
-    for i, start in enumerate(range(0, seq_len, truncation_delta)):
-        # if truncated, select the current truncation part
-        batch_x_part = batch_x[:,start:start+truncation_delta,:]
-        batch_y_part = batch_y[:,start:start+truncation_delta,:]
-
-        loss = training_func(batch_x, batch_y)
-        total_loss += loss
-
-    # reset model if necessary
-    model.reset()
-    return total_loss / i
-
-
-def train(model, generate_data, loss_function, train_func, truncation_delta=0):
+def train(model, generate_data, loss_function, train_func):
     # Use negative log-likelihood and ADAM for training
     optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
 
@@ -174,17 +188,7 @@ def train(model, generate_data, loss_function, train_func, truncation_delta=0):
         batch_num = 0
 
         for batch_x, batch_y in get_batched_data(train_X, train_Y):
-            if truncation_delta > 0:
-                total_loss += train_truncated(
-                    optimizer, 
-                    loss_function, 
-                    batch_x, 
-                    batch_y, 
-                    lambda trunc_batch_x, trunc_batch_y : train_func(optimizer, loss_function, trunc_batch_x, trunc_batch_y), 
-                    truncation_delta)
-            else:
-                total_loss += train_func(optimizer, loss_function, batch_x, batch_y)
-
+            total_loss += train_func(optimizer, loss_function, batch_x, batch_y)
             batch_num += 1
 
         result = 'Epoch {} \t => Loss: {} [Batch-Time = {}s]'.format(epoch, total_loss / batch_num, round(time.time() - start_time, 2))
@@ -210,7 +214,7 @@ if __name__ == '__main__':
         model.load(config.LOAD_PATH)
 
     if not args.test:
-        train(model, generate_data, loss_function, train_function, truncation_delta=config.TRUNCATION_DELTA)
+        train(model, generate_data, loss_function, train_function)
 
     test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH, args.memory_task)
     

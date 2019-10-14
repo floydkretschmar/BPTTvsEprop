@@ -59,7 +59,7 @@ class BPTTCell(LSTMCell):
         cy = (forgetgate * cx) + (ingate * cellgate)
         hy = outgate * torch.tanh(cy)
 
-        return hy, hy, cy
+        return hy, cy
 
 
 class EpropCell(LSTMCell):
@@ -81,7 +81,7 @@ class EpropCell(LSTMCell):
             self.bias_ih,
             self.bias_hh)
 
-        return hy, hy, cy, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate
+        return hy, cy, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate
 
 
 class LSTM(nn.Module):
@@ -98,10 +98,10 @@ class LSTM(nn.Module):
         cx = initial_c
         outputs = []
         for i in range(len(inputs)):
-            out, hx, cx = self.cell(inputs[i], hx, cx)
-            outputs += [out]
+            hx, cx = self.cell(inputs[i], hx, cx)
+            outputs += [hx]
 
-        return torch.stack(outputs), hx, cx
+        return torch.stack(outputs), cx
 
 
 class EpropLSTM(nn.Module):
@@ -134,12 +134,11 @@ class EpropLSTM(nn.Module):
             ev_w_hh_x = eligibility_vectors[1]
             ev_b_x = eligibility_vectors[2]
 
-
         forgetgate = to_device(torch.zeros(batch_size, hidden_size, 1))
 
         outputs = []
         for i in range(len(inputs)):
-            out, hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate = self.cell(inputs[i], hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate)
-            outputs += [out]
+            hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate = self.cell(inputs[i], hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate)
+            outputs += [hx]
 
-        return torch.stack(outputs), hx, cx, [ev_w_ih_x, ev_w_hh_x, ev_b_x]
+        return torch.stack(outputs), cx, [ev_w_ih_x, ev_w_hh_x, ev_b_x]
