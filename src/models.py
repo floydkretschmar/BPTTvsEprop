@@ -11,6 +11,24 @@ from synth_grad_func import SyntheticGradient
 
 
 class BaseNetwork(nn.Module):
+    def __init__(self):
+        super(BaseNetwork, self).__init__()
+
+    def forward(self):
+        pass
+
+    def get_name(self):
+        return "BaseNetwork"
+
+    def save(self, path, epoch):
+        torch.save(self.state_dict(), '{}{}_{}.pth'.format(path, self.get_name(), epoch))
+
+    def load(self, path):
+        self.load_state_dict(torch.load('{}{}.pth'.format(path, self.get_name())))
+        self.eval()
+
+
+class BaseLSTM(BaseNetwork):
     def __init__(self, 
                  input_size, 
                  hidden_size, 
@@ -19,7 +37,7 @@ class BaseNetwork(nn.Module):
                  bias=True, 
                  batch_first=True, 
                  single_output=True):
-        super(BaseNetwork, self).__init__()
+        super(BaseLSTM, self).__init__()
         self.output_size = output_size
         self.hidden_size = hidden_size
         self.input_size = input_size
@@ -58,19 +76,12 @@ class BaseNetwork(nn.Module):
         return dense_out
 
     def get_name(self):
-        return "BaseNetwork"
+        return "BaseLSTM"
 
     def reset(self):
         pass
 
-    def save(self, path, epoch):
-        torch.save(self.state_dict(), '{}{}_{}.pth'.format(path, self.get_name(), epoch))
-
-    def load(self, path):
-        self.load_state_dict(torch.load('{}{}.pth'.format(path, self.get_name())))
-        self.eval()
-
-class BPTT_LSTM(BaseNetwork):
+class BPTT_LSTM(BaseLSTM):
     def __init__(self, 
                  input_size, 
                  hidden_size, 
@@ -91,7 +102,7 @@ class BPTT_LSTM(BaseNetwork):
         return "LSTM_BPTT"
 
 
-class EPROP1_LSTM(BaseNetwork):
+class EPROP1_LSTM(BaseLSTM):
     def __init__(self, 
                  input_size, 
                  hidden_size, 
@@ -112,7 +123,7 @@ class EPROP1_LSTM(BaseNetwork):
         return "LSTM_EPROP1"
 
 
-class EPROP3_LSTM(BaseNetwork):
+class EPROP3_LSTM(BaseLSTM):
     def __init__(self, 
                  input_size, 
                  hidden_size, 
@@ -130,13 +141,13 @@ class EPROP3_LSTM(BaseNetwork):
             single_output=single_output)
 
         # sythetic gradient that tries to emulate dE/d(s_j^{tm+1})
-        self.synthetic_gradient_net = nn.Sequential(nn.Linear(self.output_size, 512),
+        self.synthetic_gradient_net = nn.Sequential(nn.Linear(output_size, 512, bias=bias),
                                 nn.ReLU(),
-                                nn.Linear(512, 256),
+                                nn.Linear(512, 256, bias=bias),
                                 nn.ReLU(),
-                                nn.Linear(256, 128),
+                                nn.Linear(256, 128, bias=bias),
                                 nn.ReLU(),
-                                nn.Linear(128, self.hidden_size))
+                                nn.Linear(128, hidden_size, bias=bias))
 
         self.initial_c = None
         self.eligibility_vectors = None
@@ -158,10 +169,10 @@ class EPROP3_LSTM(BaseNetwork):
         lstm_out = self.forward_dense(lstm_out)
 
         # take the last output of the network to let the synth grad network predict the synthetic gradient
-        synth_grad = self.synthetic_gradient_net(lstm_out[:, -1, :])
+        synth_grad = self.synthetic_gradient_net(lstm_out[:,-1,:].detach())
 
         # set the gradient of the last internal state equal to the synthetic gradient
-        self.initial_c, lstm_out, synth_grad = SyntheticGradient.apply(self.initial_c, lstm_out, synth_grad)
+        self.initial_c, lstm_out, _ = SyntheticGradient.apply(self.initial_c, lstm_out, synth_grad.detach())
 
         # detach initial c ...
         self.initial_c = self.initial_c.detach().requires_grad_()
@@ -169,7 +180,7 @@ class EPROP3_LSTM(BaseNetwork):
         self.eligibility_vectors = [self.eligibility_vectors[0].detach(), self.eligibility_vectors[1].detach(),self.eligibility_vectors[2].detach()]
 
         # return both the output as well as the synthetic gradient 
-        return lstm_out, synth_grad, old_initial_c
+        return lstm_out, old_initial_c, synth_grad
 
     def get_name(self):        
         return "LSTM_EPROP3"

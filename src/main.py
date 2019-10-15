@@ -40,17 +40,18 @@ def chose_task(memory_task, training_algorithm):
 
     if training_algorithm == BPTT:
         model_constructor = BPTT_LSTM
-        train_function = lambda optimizer, loss_func, batch_x, batch_y : train_bptt(optimizer, loss_func, batch_x, batch_y, memory_task)
+        train_function = lambda model, optimizer, loss_func, batch_x, batch_y : train_bptt(model, optimizer, loss_func, batch_x, batch_y, memory_task)
     elif training_algorithm == EPROP_1:
         model_constructor = EPROP1_LSTM
-        train_function = lambda optimizer, loss_func, batch_x, batch_y : train_bptt(optimizer, loss_func, batch_x, batch_y, memory_task)
+        train_function = lambda model, optimizer, loss_func, batch_x, batch_y : train_bptt(model, optimizer, loss_func, batch_x, batch_y, memory_task)
     elif training_algorithm == EPROP_3:
         model_constructor = lambda in_size, h_size, o_size, single_output : EPROP3_LSTM(
             in_size, 
             h_size, 
             o_size, 
             single_output=single_output)
-        train_function = lambda optimizer, loss_func, batch_x, batch_y : train_eprop3(
+        train_function = lambda model, optimizer, loss_func, batch_x, batch_y : train_eprop3(
+            model,
             optimizer, 
             loss_func, 
             batch_x, 
@@ -69,9 +70,9 @@ def chose_task(memory_task, training_algorithm):
 def format_pred_and_gt(pred, gt, memory_task):
     if memory_task == STORE_RECALL:
         pred = pred.view(-1, pred.size(2))
-        gt = gt.clone().squeeze().view(-1)
+        gt = gt.squeeze().flatten()
     else:
-        gt = gt.clone().squeeze()
+        gt = gt.squeeze()
 
     return pred, gt
 
@@ -128,7 +129,7 @@ def test(model, loss_function, generate_data, size_test_data, sequence_length, m
 
             logging.info('Loss: {}'.format(loss))
 
-def train_eprop3(optimizer, loss_function, batch_x, batch_y, memory_task, truncation_delta):
+def train_eprop3(model, optimizer, loss_function, batch_x, batch_y, memory_task, truncation_delta):
     seq_len = batch_x.shape[1]
     loss_function_synth = nn.MSELoss()
 
@@ -144,22 +145,22 @@ def train_eprop3(optimizer, loss_function, batch_x, batch_y, memory_task, trunca
         first_batch_y = batch_y[:,start-truncation_delta:start,:].clone()
 
         # simulate network over [t_{m-1}+1, ..., t_{m}] and calculate d\bar{E}_m/d\theta (backprop using synth grad)
-        prediction, first_synth_grad, first_initial_c = model(first_batch_x)
+        prediction, _, first_synth_grad = model(first_batch_x)
 
         #pred, gt = format_pred_and_gt(prediction, first_batch_y, memory_task)  
         loss = loss_function(prediction.view(-1, prediction.size(2)), first_batch_y.squeeze().flatten())
-        loss.backward(retain_graph=True)
-        #lstm_loss += loss.item()
-        del loss, first_initial_c, prediction, first_batch_x, first_batch_y
+        loss.backward()
+        lstm_loss += loss.item()
+        del loss, prediction, first_batch_x, first_batch_y
 
         # select [t_{m}+1, ..., t_{m+1}]
         second_batch_x = batch_x[:,start:start+truncation_delta,:].clone()
         second_batch_y = batch_y[:,start:start+truncation_delta,:].clone()
-        prediction, second_synth_grad, second_initial_state = model(second_batch_x)
+
+        prediction, second_initial_state, second_synth_grad = model(second_batch_x)
         second_initial_state.retain_grad()
 
-        #pred, gt = format_pred_and_gt(prediction, second_batch_y, memory_task)  
-                 
+        #pred, gt = format_pred_and_gt(prediction, second_batch_y, memory_task)                   
         loss = loss_function(prediction.view(-1, prediction.size(2)), second_batch_y.squeeze().flatten())
         loss.backward()
         real_grad_x = second_initial_state.grad.detach()  
@@ -189,7 +190,7 @@ def train_eprop3(optimizer, loss_function, batch_x, batch_y, memory_task, trunca
 
     return lstm_loss / i
 
-def train_bptt(optimizer, loss_function, batch_x, batch_y, memory_task):
+def train_bptt(model, optimizer, loss_function, batch_x, batch_y, memory_task):
     # reset gradient
     optimizer.zero_grad()
 
@@ -218,7 +219,7 @@ def train(model, generate_data, loss_function, train_func):
         batch_num = 0
 
         for batch_x, batch_y in get_batched_data(train_X, train_Y):
-            total_loss += train_func(optimizer, loss_function, batch_x, batch_y)
+            total_loss += train_func(model, optimizer, loss_function, batch_x, batch_y)
             batch_num += 1
 
         result = 'Epoch {} \t => Loss: {} [Batch-Time = {}s]'.format(epoch, total_loss / batch_num, round(time.time() - start_time, 2))
