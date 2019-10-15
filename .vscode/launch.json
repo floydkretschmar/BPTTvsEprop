@@ -21,12 +21,20 @@
             "args": ["--test"]
         },
         {
-            "name": "Train Store Recall Task",
+            "name": "Train Store Recall Task BPTT",
             "type": "python",
             "request": "launch",
             "program": "${workspaceRoot}/src/main.py",
             "console": "integratedTerminal",
             "args": ["--memory_task", "S_R"]
+        },
+        {
+            "name": "Train Store Recall Task Eprop 1",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceRoot}/src/main.py",
+            "console": "integratedTerminal",
+            "args": ["--memory_task", "S_R", "-a", "EPROP1"]
         },
         {
             "name": "Train Store Recall Task Eprop 3",

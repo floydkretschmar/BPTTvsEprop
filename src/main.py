@@ -133,7 +133,8 @@ def train_eprop3(model, optimizer, loss_function, batch_x, batch_y, memory_task,
     seq_len = batch_x.shape[1]
     loss_function_synth = nn.MSELoss()
 
-    lstm_loss = 0
+    # reset model
+    model.reset()
 
     # implementation of algo on page 33 of eprop paper
     for i, start in enumerate(range(truncation_delta, seq_len, truncation_delta)):
@@ -150,7 +151,6 @@ def train_eprop3(model, optimizer, loss_function, batch_x, batch_y, memory_task,
         #pred, gt = format_pred_and_gt(prediction, first_batch_y, memory_task)  
         loss = loss_function(prediction.view(-1, prediction.size(2)), first_batch_y.squeeze().flatten())
         loss.backward()
-        lstm_loss += loss.item()
         del loss, prediction, first_batch_x, first_batch_y
 
         # select [t_{m}+1, ..., t_{m+1}]
@@ -175,7 +175,7 @@ def train_eprop3(model, optimizer, loss_function, batch_x, batch_y, memory_task,
 
         # train the final synthetic gradient to be close to 0
         if start+truncation_delta == seq_len:
-            zeros = torch.zeros(real_grad_x_shape, requires_grad=False)
+            zeros = to_device(torch.zeros(real_grad_x_shape, requires_grad=False))
             loss = loss_function_synth(second_synth_grad, zeros)
             loss.backward()
             del loss, zeros
@@ -185,10 +185,12 @@ def train_eprop3(model, optimizer, loss_function, batch_x, batch_y, memory_task,
 
         optimizer.step()
 
-    # reset model
-    model.reset()
+    with torch.no_grad():
+        prediction, _, _ = model(batch_x)
+        pred, gt = format_pred_and_gt(prediction, batch_y, memory_task)
+        loss = loss_function(pred, gt)
 
-    return lstm_loss / i
+    return loss.item()
 
 def train_bptt(model, optimizer, loss_function, batch_x, batch_y, memory_task):
     # reset gradient

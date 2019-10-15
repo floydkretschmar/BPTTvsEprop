@@ -71,7 +71,7 @@ class BaseLSTM(BaseNetwork):
         initial_c = to_device(torch.zeros(input.size(1), self.hidden_size))
 
         # lstm and dense pass for prediction
-        lstm_out, _ = self.lstm(input, initial_h, initial_c)
+        lstm_out = self.lstm(input, initial_h, initial_c)[0]
         dense_out = self.forward_dense(lstm_out)
         return dense_out
 
