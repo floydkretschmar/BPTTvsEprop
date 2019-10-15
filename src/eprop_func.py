@@ -15,9 +15,9 @@ def calculate_eligibility_trace(
         input_size,
         hidden_size):
     # ... and eligibility traces
-    et_w_ih_y = to_device(torch.Tensor(batch_size, 4 * hidden_size, input_size))
-    et_w_hh_y = to_device(torch.Tensor(batch_size, 4 * hidden_size, hidden_size))
-    et_b_y = to_device(torch.Tensor(batch_size, 4 * hidden_size, 1))
+    et_w_ih_y = to_device(torch.zeros(batch_size, 4 * hidden_size, input_size, requires_grad=False))
+    et_w_hh_y = to_device(torch.zeros(batch_size, 4 * hidden_size, hidden_size, requires_grad=False))
+    et_b_y = to_device(torch.zeros(batch_size, 4 * hidden_size, 1, requires_grad=False))
 
     # calculate eligibility traces by multiplying the eligibility vectors with the outgate
     tmp_outgate = outgate.repeat(1, 3, 1)
@@ -51,9 +51,9 @@ def calculate_eligibility_vector(
         cx,
         hidden_size):
     # the new eligibility vectors ...
-    ev_w_ih_y = ev_w_ih_x.clone() * forgetgate_x
-    ev_w_hh_y = ev_w_hh_x.clone() * forgetgate_x
-    ev_b_y = ev_b_x.clone() * forgetgate_x
+    ev_w_ih_y = ev_w_ih_x * forgetgate_x
+    ev_w_hh_y = ev_w_hh_x * forgetgate_x
+    ev_b_y = ev_b_x * forgetgate_x
 
     # ingate
     base = ingate * (ones - ingate) * cellgate
@@ -119,6 +119,7 @@ def forward_lstm(weight_ih, weight_hh, bias_ih, bias_hh, input_data, hx, cx):
     hy = outgate * torch.tanh(cy)
 
     return ingate, forgetgate_y, cellgate, outgate, cy, hy
+
 
 class EProp1(torch.autograd.Function):
     @staticmethod
@@ -191,3 +192,80 @@ class EProp1(torch.autograd.Function):
 
         # grad_ev_ih, grad_ev_hh, grad_ev_b, grad_forgetgate_x, grad_input, grad_hx, grad_cx, grad_weight_ih, grad_weight_hh, grad_bias_ih, grad_bias_hh
         return None, None, None, None, None, None, None, grad_weight_ih, grad_weight_hh, grad_bias.squeeze(), grad_bias.squeeze()
+
+
+class EProp3(torch.autograd.Function):
+    @staticmethod
+    def forward(
+            ctx, 
+            ev_w_ih_x,
+            ev_w_hh_x,
+            ev_b_x,
+            forgetgate_x,
+            input_data, 
+            hx, 
+            cx,
+            weight_ih, 
+            weight_hh, 
+            bias_ih=None, 
+            bias_hh=None):
+        ingate, forgetgate_y, cellgate, outgate, cy, hy = forward_lstm(weight_ih, weight_hh, bias_ih, bias_hh, input_data, hx, cx)
+
+        # TODO: calculate new eligibility vector and trace
+        # There exist distinct eligibility traces and vectors for the followiug parts of the LSTM cell:
+        # - input to hidden connections, hidden to hidden connections, bias 
+        # all for each: 
+        # - ... inputgate, forgetgate and cellgate
+        # => overall 3 * 3 = 9 eligibility traces
+        input_data, ingate, forgetgate_y, forgetgate_x, cellgate, outgate, hx, hy, cx, ones, hidden_size, batch_size, input_size = prepare_data(
+            input_data, ingate, forgetgate_y, forgetgate_x, cellgate, outgate, hx, hy, cx)
+
+        ev_w_ih_y, ev_w_hh_y, ev_b_y = calculate_eligibility_vector(
+            ones, 
+            ev_w_ih_x, 
+            ev_w_hh_x, 
+            ev_b_x, 
+            input_data, 
+            ingate, 
+            cellgate, 
+            forgetgate_y, 
+            forgetgate_x, 
+            hx, 
+            cx, 
+            hidden_size)
+
+        et_w_ih_y, et_w_hh_y, et_b_y = calculate_eligibility_trace(
+            ones, 
+            ev_w_ih_y, 
+            ev_w_hh_y, 
+            ev_b_y,
+            input_data,
+            outgate, 
+            hx, 
+            cy, 
+            batch_size,
+            input_size,
+            hidden_size)
+
+        ctx.intermediate_results = et_w_ih_y, et_w_hh_y, et_b_y, forgetgate_y
+
+        return hy, cy, ev_w_ih_y, ev_w_hh_y, ev_b_y, forgetgate_y
+
+    @staticmethod
+    # grad_ev_ih and grad_ev_hh should always be None
+    def backward(ctx, grad_hy, grad_cy, grad_ev_w_ih, grad_ev_w_hh, grad_ev_b, grad_forgetgate_y):
+        et_w_ih_y, et_w_hh_y, et_b_y, forgetgate_y = ctx.intermediate_results
+
+        tmp_grad_hy = grad_hy.unsqueeze(2).repeat(1, 4, 1)
+
+        grad_weight_ih = et_w_ih_y * tmp_grad_hy
+        grad_weight_hh = et_w_hh_y * tmp_grad_hy
+        grad_bias = et_b_y * tmp_grad_hy
+
+        # use local error grad_hy plus backpropagated error grad_cy where grad_cy is a synthetic gradient for
+        # the edges of the truncated propagation
+        grad_cy = grad_hy + grad_cy * forgetgate_y.squeeze()
+        #print(grad_cy)
+
+        # grad_ev_ih, grad_ev_hh, grad_ev_b, grad_forgetgate_x, grad_input, grad_hx, grad_cx, grad_weight_ih, grad_weight_hh, grad_bias_ih, grad_bias_hh
+        return None, None, None, None, None, None, grad_cy, grad_weight_ih, grad_weight_hh, grad_bias.squeeze(), grad_bias.squeeze()

@@ -6,7 +6,7 @@ import math
 
 import lstm
 from util import to_device
-from eprop_func import EProp1
+from eprop_func import EProp1, EProp3
 from synth_grad_func import SyntheticGradient
 
 
@@ -124,7 +124,7 @@ class EPROP3_LSTM(BaseNetwork):
             input_size, 
             hidden_size, 
             output_size, 
-            lstm.EpropLSTM(input_size, hidden_size, lstm.EpropCell(input_size, hidden_size, eprop_func=EProp1.apply, bias=bias)), 
+            lstm.EpropLSTM(input_size, hidden_size, lstm.EpropCell(input_size, hidden_size, eprop_func=EProp3.apply, bias=bias)), 
             bias=bias, 
             batch_first=batch_first, 
             single_output=single_output)
@@ -164,7 +164,7 @@ class EPROP3_LSTM(BaseNetwork):
         self.initial_c, lstm_out, synth_grad = SyntheticGradient.apply(self.initial_c, lstm_out, synth_grad)
 
         # detach initial c ...
-        self.initial_c = self.initial_c.detach()
+        self.initial_c = self.initial_c.detach().requires_grad_()
         # ... and make sure to also detach eligibility vectors
         self.eligibility_vectors = [self.eligibility_vectors[0].detach(), self.eligibility_vectors[1].detach(),self.eligibility_vectors[2].detach()]
 

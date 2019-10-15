@@ -27,10 +27,6 @@ class LSTMCell(jit.ScriptModule):
             self.bias_ih = None
             self.bias_hh = None
 
-        # Initialize eligibility trace to zero
-        self.eligibility_vector_ih = torch.zeros(hidden_size, input_size)
-        self.eligibility_vector_hh = torch.zeros(hidden_size, hidden_size)
-
         self.initialize_parameters(self.weight_ih, self.bias_ih)
         self.initialize_parameters(self.weight_hh, self.bias_hh)
     
@@ -126,9 +122,9 @@ class EpropLSTM(nn.Module):
         cx = initial_c
 
         if len(eligibility_vectors) == 0:
-            ev_w_ih_x = to_device(torch.zeros(batch_size, 3 * hidden_size, input_size))
-            ev_w_hh_x = to_device(torch.zeros(batch_size, 3 * hidden_size, hidden_size))
-            ev_b_x = to_device(torch.zeros(batch_size, 3 * hidden_size, 1))
+            ev_w_ih_x = to_device(torch.zeros(batch_size, 3 * hidden_size, input_size, requires_grad=False))
+            ev_w_hh_x = to_device(torch.zeros(batch_size, 3 * hidden_size, hidden_size, requires_grad=False))
+            ev_b_x = to_device(torch.zeros(batch_size, 3 * hidden_size, 1, requires_grad=False))
         else:
             ev_w_ih_x = eligibility_vectors[0]
             ev_w_hh_x = eligibility_vectors[1]

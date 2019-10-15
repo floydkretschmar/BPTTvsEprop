@@ -130,34 +130,64 @@ def test(model, loss_function, generate_data, size_test_data, sequence_length, m
 
 def train_eprop3(optimizer, loss_function, batch_x, batch_y, memory_task, truncation_delta):
     seq_len = batch_x.shape[1]
+    loss_function_synth = nn.MSELoss()
 
-    real_grad_x = 0
-    total_loss = 0
-    for i, start in enumerate(range(0, seq_len, truncation_delta)):
-        # if truncated, select the current truncation part
-        batch_x_part = batch_x[:,start:start+truncation_delta,:]
-        batch_y_part = batch_y[:,start:start+truncation_delta,:]
+    lstm_loss = 0
 
+    # implementation of algo on page 33 of eprop paper
+    for i, start in enumerate(range(truncation_delta, seq_len, truncation_delta)):
         # reset gradient
         optimizer.zero_grad()
 
-        prediction, synth_grad_y, first_state = model(batch_x_part)
-        first_state.retain_grad()
-        pred, gt = format_pred_and_gt(prediction, batch_y_part, memory_task)
-        
-        # Compute the loss, gradients, and update the parameters
-        loss = loss_function(pred, gt)
+        # select [t_{m-1}+1, ..., t_{m}]
+        first_batch_x = batch_x[:,start-truncation_delta:start,:].clone()
+        first_batch_y = batch_y[:,start-truncation_delta:start,:].clone()
+
+        # simulate network over [t_{m-1}+1, ..., t_{m}] and calculate d\bar{E}_m/d\theta (backprop using synth grad)
+        prediction, first_synth_grad, first_initial_c = model(first_batch_x)
+
+        #pred, gt = format_pred_and_gt(prediction, first_batch_y, memory_task)  
+        loss = loss_function(prediction.view(-1, prediction.size(2)), first_batch_y.squeeze().flatten())
+        loss.backward(retain_graph=True)
+        #lstm_loss += loss.item()
+        del loss, first_initial_c, prediction, first_batch_x, first_batch_y
+
+        # select [t_{m}+1, ..., t_{m+1}]
+        second_batch_x = batch_x[:,start:start+truncation_delta,:].clone()
+        second_batch_y = batch_y[:,start:start+truncation_delta,:].clone()
+        prediction, second_synth_grad, second_initial_state = model(second_batch_x)
+        second_initial_state.retain_grad()
+
+        #pred, gt = format_pred_and_gt(prediction, second_batch_y, memory_task)  
+                 
+        loss = loss_function(prediction.view(-1, prediction.size(2)), second_batch_y.squeeze().flatten())
+        loss.backward()
+        real_grad_x = second_initial_state.grad.detach()  
+        del loss, second_initial_state, prediction, second_batch_x, second_batch_y
+
+        # optimize the synth grad network
+        loss = loss_function_synth(first_synth_grad, real_grad_x)
         loss.backward()
 
-        real_grad_x = first_state.grad
+        real_grad_x_shape = real_grad_x.shape
+        del loss, first_synth_grad, real_grad_x
+
+        # train the final synthetic gradient to be close to 0
+        if start+truncation_delta == seq_len:
+            zeros = torch.zeros(real_grad_x_shape, requires_grad=False)
+            loss = loss_function_synth(second_synth_grad, zeros)
+            loss.backward()
+            del loss, zeros
+        
+        del second_synth_grad, real_grad_x_shape
+        torch.cuda.empty_cache()
 
         optimizer.step()
-        total_loss += loss.item()
 
     # reset model
     model.reset()
 
-    return total_loss / i
+    return lstm_loss / i
 
 def train_bptt(optimizer, loss_function, batch_x, batch_y, memory_task):
     # reset gradient
