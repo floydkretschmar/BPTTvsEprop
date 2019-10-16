@@ -163,24 +163,25 @@ class EPROP3_LSTM(BaseLSTM):
                 to_device(torch.zeros(batch_size, 3 * self.hidden_size, self.hidden_size, requires_grad=False)),
                 to_device(torch.zeros(batch_size, 3 * self.hidden_size, 1, requires_grad=False))]
 
-        old_initial_c = self.initial_c
+        initial_c = self.initial_c
         # lstm and dense pass for prediction
-        lstm_out, self.initial_c, self.eligibility_vectors = self.lstm(input, initial_h, self.initial_c, self.eligibility_vectors)
+        lstm_out, final_c, self.eligibility_vectors = self.lstm(input, initial_h.detach(), initial_c, self.eligibility_vectors)
         lstm_out = self.forward_dense(lstm_out)
 
         # take the last output of the network to let the synth grad network predict the synthetic gradient
         synth_grad = self.synthetic_gradient_net(lstm_out[:,-1,:].detach())
 
         # set the gradient of the last internal state equal to the synthetic gradient
-        self.initial_c, lstm_out, _ = SyntheticGradient.apply(self.initial_c, lstm_out, synth_grad.detach())
+        self.initial_c, lstm_out, _ = SyntheticGradient.apply(final_c, lstm_out, synth_grad.detach())
 
-        # detach initial c ...
+        # detach initial state from the compute graph of [t_{m-1}+1, ..., t_{m}] but 
+        # build a new compute graph ...
         self.initial_c = self.initial_c.detach().requires_grad_()
         # ... and make sure to also detach eligibility vectors
         self.eligibility_vectors = [self.eligibility_vectors[0].detach(), self.eligibility_vectors[1].detach(),self.eligibility_vectors[2].detach()]
 
         # return both the output as well as the synthetic gradient 
-        return lstm_out, old_initial_c, synth_grad
+        return lstm_out, initial_c, synth_grad
 
     def get_name(self):        
         return "LSTM_EPROP3"
