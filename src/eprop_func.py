@@ -174,14 +174,14 @@ class EProp1(torch.autograd.Function):
             input_size,
             hidden_size)
 
-        ctx.intermediate_results = et_w_ih_y, et_w_hh_y, et_b_y
+        ctx.save_for_backward(et_w_ih_y, et_w_hh_y, et_b_y)
 
         return hy, cy, ev_w_ih_y, ev_w_hh_y, ev_b_y, forgetgate_y
 
     @staticmethod
     # grad_ev_ih and grad_ev_hh should always be None
     def backward(ctx, grad_hy, grad_cy, grad_ev_w_ih, grad_ev_w_hh, grad_ev_b, grad_forgetgate_y):
-        et_w_ih_y, et_w_hh_y, et_b_y = ctx.intermediate_results
+        et_w_ih_y, et_w_hh_y, et_b_y = ctx.saved_variables
 
         # Approximate dE/dh by substituting only with local error (\partial E)/(\partial h)
         tmp_grad_hy = grad_hy.unsqueeze(2).repeat(1, 4, 1)
