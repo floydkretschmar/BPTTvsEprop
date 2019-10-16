@@ -145,43 +145,41 @@ def train_eprop3(model, optimizer, loss_function, batch_x, batch_y, memory_task,
         first_batch_x = batch_x[:,start-truncation_delta:start,:].clone()
         first_batch_y = batch_y[:,start-truncation_delta:start,:].clone()
 
-        # simulate network over [t_{m-1}+1, ..., t_{m}] and calculate d\bar{E}_m/d\theta (backprop using synth grad)
+        # simulate network over [t_{m-1}+1, ..., t_{m}] and backprop using the synthetic gradient
         prediction, _, first_synth_grad = model(first_batch_x)
 
-        #pred, gt = format_pred_and_gt(prediction, first_batch_y, memory_task)  
-        loss = loss_function(prediction.view(-1, prediction.size(2)), first_batch_y.squeeze().flatten())
+        pred, gt = format_pred_and_gt(prediction, first_batch_y, memory_task)  
+        loss = loss_function(pred, gt)
         loss.backward()
-        del loss, prediction, first_batch_x, first_batch_y
 
-        # select [t_{m}+1, ..., t_{m+1}]
+        # select [t_{m}+1, ..., t_{m+1}] (the next truncated time interval)
         second_batch_x = batch_x[:,start:start+truncation_delta,:].clone()
         second_batch_y = batch_y[:,start:start+truncation_delta,:].clone()
 
+        # simulate and backprop using second synthetic gradient
         prediction, second_initial_state, second_synth_grad = model(second_batch_x)
+
+        # retain grad of the initial hidden state of the second interval ...
         second_initial_state.retain_grad()
 
-        #pred, gt = format_pred_and_gt(prediction, second_batch_y, memory_task)                   
-        loss = loss_function(prediction.view(-1, prediction.size(2)), second_batch_y.squeeze().flatten())
+        pred, gt = format_pred_and_gt(prediction, second_batch_y, memory_task)    
+        loss = loss_function(pred, gt)               
         loss.backward()
-        real_grad_x = second_initial_state.grad.detach()  
-        del loss, second_initial_state, prediction, second_batch_x, second_batch_y
 
-        # optimize the synth grad network
+        # ... and store it ...
+        real_grad_x = second_initial_state.grad.detach()  
+
+        # ... to optimize the synth grad network using MSE
         loss = loss_function_synth(first_synth_grad, real_grad_x)
         loss.backward()
 
         real_grad_x_shape = real_grad_x.shape
-        del loss, first_synth_grad, real_grad_x
 
         # train the final synthetic gradient to be close to 0
         if start+truncation_delta == seq_len:
             zeros = to_device(torch.zeros(real_grad_x_shape, requires_grad=False))
             loss = loss_function_synth(second_synth_grad, zeros)
             loss.backward()
-            del loss, zeros
-        
-        del second_synth_grad, real_grad_x_shape
-        torch.cuda.empty_cache()
 
         optimizer.step()
 
