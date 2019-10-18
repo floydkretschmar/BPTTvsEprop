@@ -11,9 +11,10 @@ Custom LSTM implementation using jit adopted from:
 https://github.com/pytorch/benchmark/blob/master/rnns/fastrnns/custom_lstms.py
 """
 
-class LSTMCell(jit.ScriptModule):
+
+class LSTM(jit.ScriptModule):
     def __init__(self, input_size, hidden_size, bias=True):
-        super(LSTMCell, self).__init__()
+        super(LSTM, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
 
@@ -29,18 +30,35 @@ class LSTMCell(jit.ScriptModule):
 
         self.initialize_parameters(self.weight_ih, self.bias_ih)
         self.initialize_parameters(self.weight_hh, self.bias_hh)
-    
+
     def initialize_parameters(self, weight, bias):
         nn.init.kaiming_uniform_(weight, a=math.sqrt(5))
         if bias is not None:
             fan_in, _ = nn.init._calculate_fan_in_and_fan_out(weight)
             bound = 1 / math.sqrt(fan_in)
             nn.init.uniform_(bias, -bound, bound)
+    
+    
+class BPTT_LSTM(LSTM):
+    def __init__(self, input_size, hidden_size, bias=True):
+        super(BPTT_LSTM, self).__init__(input_size, hidden_size, bias)
 
+    def forward(self, input, initial_h, initial_c):
+        # input (seq_len x batch_size x input_size)
+        # initial_hidden (batch x hidden_size)
+        # initial_state (batch x hidden_size)
+        inputs = input.unbind(0)
+        hx = initial_h
+        cx = initial_c
+        outputs = []
+        for i in range(len(inputs)):
+            hx, cx = self.cell(inputs[i], hx, cx)
+            outputs += [hx]
 
-class BPTTCell(LSTMCell):
+        return torch.stack(outputs), cx
+
     @jit.script_method
-    def forward(self, input, hx, cx):
+    def cell(self, input, hx, cx):
         # net activations...
         gates = (torch.mm(input, self.weight_ih.t()) + self.bias_ih +
                  torch.mm(hx, self.weight_hh.t()) + self.bias_hh)
@@ -58,52 +76,10 @@ class BPTTCell(LSTMCell):
         return hy, cy
 
 
-class EpropCell(LSTMCell):
+class EPropLSTM(LSTM):
     def __init__(self, input_size, hidden_size, eprop_func, bias=True):
-        super(EpropCell, self).__init__(input_size, hidden_size, bias)
+        super(EPropLSTM, self).__init__(input_size, hidden_size, bias)
         self.eprop_func = eprop_func
-
-    def forward(self, input, hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate):
-        hy, cy, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate = self.eprop_func(
-            ev_w_ih_x,
-            ev_w_hh_x,
-            ev_b_x,
-            forgetgate,
-            input, 
-            hx, 
-            cx,
-            self.weight_ih,
-            self.weight_hh,
-            self.bias_ih,
-            self.bias_hh)
-
-        return hy, cy, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate
-
-
-class LSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, cell):
-        super(LSTM, self).__init__()
-        self.cell = cell
-
-    def forward(self, input, initial_h, initial_c):
-        # input (seq_len x batch_size x input_size)
-        # initial_hidden (batch x hidden_size)
-        # initial_state (batch x hidden_size)
-        inputs = input.unbind(0)
-        hx = initial_h
-        cx = initial_c
-        outputs = []
-        for i in range(len(inputs)):
-            hx, cx = self.cell(inputs[i], hx, cx)
-            outputs += [hx]
-
-        return torch.stack(outputs), cx
-
-
-class EpropLSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, cell):
-        super(EpropLSTM, self).__init__()
-        self.cell = cell
 
     def forward(
             self, 
@@ -138,3 +114,19 @@ class EpropLSTM(nn.Module):
             outputs += [hx]
 
         return torch.stack(outputs), cx, [ev_w_ih_x, ev_w_hh_x, ev_b_x]
+
+    def cell(self, input, hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate):
+        hy, cy, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate = self.eprop_func(
+            ev_w_ih_x,
+            ev_w_hh_x,
+            ev_b_x,
+            forgetgate,
+            input, 
+            hx, 
+            cx,
+            self.weight_ih,
+            self.weight_hh,
+            self.bias_ih,
+            self.bias_hh)
+
+        return hy, cy, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate

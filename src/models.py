@@ -93,7 +93,7 @@ class BPTT_LSTM(BaseLSTM):
             input_size, 
             hidden_size, 
             output_size, 
-            lstm.LSTM(input_size, hidden_size, lstm.BPTTCell(input_size, hidden_size, bias)), 
+            lstm.BPTT_LSTM(input_size, hidden_size), 
             bias=bias, 
             batch_first=batch_first, 
             single_output=single_output)
@@ -114,7 +114,7 @@ class EPROP1_LSTM(BaseLSTM):
             input_size, 
             hidden_size, 
             output_size, 
-            lstm.EpropLSTM(input_size, hidden_size, lstm.EpropCell(input_size, hidden_size, eprop_func=EProp1.apply, bias=bias)), 
+            lstm.EPropLSTM(input_size, hidden_size, eprop_func=EProp1.apply), 
             bias=bias, 
             batch_first=batch_first, 
             single_output=single_output)
@@ -135,7 +135,7 @@ class EPROP3_LSTM(BaseLSTM):
             input_size, 
             hidden_size, 
             output_size, 
-            lstm.EpropLSTM(input_size, hidden_size, lstm.EpropCell(input_size, hidden_size, eprop_func=EProp3.apply, bias=bias)), 
+            lstm.EPropLSTM(input_size, hidden_size, eprop_func=EProp3.apply), 
             bias=bias, 
             batch_first=batch_first, 
             single_output=single_output)
