@@ -1,4 +1,4 @@
-import torch
+'''import torch
 import torch.nn as nn
 import torch.jit as jit
 
@@ -91,4 +91,4 @@ class Eprop1CellJit(LSTMCell):
             # grad_ev_ih, grad_ev_hh, grad_ev_b, grad_forgetgate_x, grad_input, grad_hx, grad_cx, grad_weight_ih, grad_weight_hh, grad_bias_ih, grad_bias_hh
             return None, None, None, None, None, None, None, grad_weight_ih, grad_weight_hh, grad_bias.squeeze(), grad_bias.squeeze()
 
-        return hy, cy, ev_w_ih_y, ev_w_hh_y, ev_b_y, forgetgate_y, backward
+        return hy, cy, ev_w_ih_y, ev_w_hh_y, ev_b_y, forgetgate_y, backward'''
