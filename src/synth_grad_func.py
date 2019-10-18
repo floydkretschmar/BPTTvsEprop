@@ -1,5 +1,4 @@
 import torch
-from util import to_device
 
 class SyntheticGradient(torch.autograd.Function):
     """
@@ -21,4 +20,5 @@ class SyntheticGradient(torch.autograd.Function):
     # grad_ev_ih and grad_ev_hh should always be None
     def backward(ctx, grad_last_c, grad_output, grad_synth_grad):
         synth_grad = ctx.intermediate_results
+        #print(synth_grad)
         return synth_grad, grad_output, None

@@ -247,19 +247,25 @@ class EProp3(torch.autograd.Function):
             input_size,
             hidden_size)
 
-        ctx.save_for_backward(et_w_ih_y, et_w_hh_y, et_b_y, forgetgate_y)
+        ctx.save_for_backward(et_w_ih_y, et_w_hh_y, et_b_y, hx.clone(), outgate)
 
         return hy, cy, ev_w_ih_y, ev_w_hh_y, ev_b_y, forgetgate_y
 
     @staticmethod
     # grad_ev_ih and grad_ev_hh should always be None
-    def backward(ctx, grad_hy, grad_cy, grad_ev_w_ih, grad_ev_w_hh, grad_ev_b, grad_forgetgate_y):
-        et_w_ih_y, et_w_hh_y, et_b_y, forgetgate_y = ctx.saved_variables
-        #print(grad_cy)
+    def backward(ctx, grad_hx, grad_cy, grad_ev_w_ih, grad_ev_w_hh, grad_ev_b, forgetgate_y):
+        et_w_ih_y, et_w_hh_y, et_b_y, hx, outgate = ctx.saved_variables
+        #print(forgetgate_y)
 
         # use local error grad_hy plus backpropagated error grad_cy where grad_cy is a synthetic gradient for
         # the edges of the truncated propagation
-        grad_cx = grad_hy + grad_cy * forgetgate_y.squeeze()
+        ones = torch.ones_like(hx)
+        sig_deriv_state = torch.sigmoid(hx) * (ones - torch.sigmoid(hx))
+
+        # just calculate backpropagated error for hidden connections
+        output_part = outgate.squeeze() * sig_deriv_state.squeeze() * grad_hx
+        hidden_part = grad_cy * forgetgate_y.squeeze()
+        grad_cx = output_part + hidden_part
         temp_grad_cx = grad_cx.unsqueeze(2).repeat(1, 4, 1)
 
         grad_weight_ih = et_w_ih_y * temp_grad_cx

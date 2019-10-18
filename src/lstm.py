@@ -5,6 +5,7 @@ import torch.jit as jit
 import math
 
 from util import to_device
+from forget_gate_func import ForgetGate
 
 """ 
 Custom LSTM implementation using jit adopted from:
@@ -110,7 +111,8 @@ class EPropLSTM(LSTM):
 
         outputs = []
         for i in range(len(inputs)):
-            hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate = self.cell(inputs[i], hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate)
+            hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, new_forgetgate = self.cell(inputs[i], hx, cx, ev_w_ih_x, ev_w_hh_x, ev_b_x, forgetgate)
+            _, forgetgate = ForgetGate.apply(forgetgate, new_forgetgate)
             outputs += [hx]
 
         return torch.stack(outputs), cx, [ev_w_ih_x, ev_w_hh_x, ev_b_x]
