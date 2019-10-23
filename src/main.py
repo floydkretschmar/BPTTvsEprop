@@ -20,8 +20,6 @@ BPTT = "BPTT"
 EPROP_1 = "EPROP1"
 EPROP_3 = "EPROP3"
 
-scale_factor = 128
-
 def chose_task(memory_task, training_algorithm):
     # Chose the task and corresponding model:
     if memory_task == MEMORY:
@@ -153,7 +151,7 @@ def train_eprop3(model, model_parameters, master_parameters, optimizer, loss_fun
 
         pred, gt = format_pred_and_gt(prediction, first_batch_y, memory_task)  
         loss = loss_function(pred, gt)
-        scaled_loss = scale_factor * loss.float()
+        scaled_loss = config.LOSS_SCALE_FACTOR * loss.float()
         scaled_loss.backward()
         copy_model_gradients_to_master(model_parameters, master_parameters)
 
@@ -169,7 +167,7 @@ def train_eprop3(model, model_parameters, master_parameters, optimizer, loss_fun
 
         pred, gt = format_pred_and_gt(prediction, second_batch_y, memory_task)    
         loss = loss_function(pred, gt) 
-        scaled_loss = scale_factor * loss.float()              
+        scaled_loss = config.LOSS_SCALE_FACTOR * loss.float()              
         scaled_loss.backward()
         copy_model_gradients_to_master(model_parameters, master_parameters)
 
@@ -178,7 +176,7 @@ def train_eprop3(model, model_parameters, master_parameters, optimizer, loss_fun
 
         # ... to optimize the synth grad network using MSE
         loss = loss_function_synth(first_synth_grad, real_grad_x)
-        scaled_loss = scale_factor * loss.float()   
+        scaled_loss = config.LOSS_SCALE_FACTOR * loss.float()   
         scaled_loss.backward()
         copy_model_gradients_to_master(model_parameters, master_parameters)
 
@@ -188,13 +186,13 @@ def train_eprop3(model, model_parameters, master_parameters, optimizer, loss_fun
         if start+truncation_delta == seq_len:
             zeros = to_device(torch.zeros(real_grad_x_shape, requires_grad=False))
             loss = loss_function_synth(second_synth_grad, zeros)
-            scaled_loss = scale_factor * loss.float()   
+            scaled_loss = config.LOSS_SCALE_FACTOR * loss.float()   
             scaled_loss.backward()
             copy_model_gradients_to_master(model_parameters, master_parameters)
 
         for parameter in master_parameters:
             if parameter.grad is not None:
-                parameter.grad.data.mul_(1./scale_factor)
+                parameter.grad.data.mul_(1./config.LOSS_SCALE_FACTOR)
 
         optimizer.step()
         copy_master_parameters_to_model(model_parameters, master_parameters)
@@ -211,7 +209,7 @@ def train_bptt(model, model_parameters, master_parameters, optimizer, loss_funct
     prediction, gt = format_pred_and_gt(prediction, batch_y, memory_task)
     # Compute the loss, gradients, and update the parameters
     loss = loss_function(prediction, gt)
-    scaled_loss = scale_factor * loss.float()
+    scaled_loss = config.LOSS_SCALE_FACTOR * loss.float()
     
     # reset gradient
     model.zero_grad()
@@ -220,7 +218,7 @@ def train_bptt(model, model_parameters, master_parameters, optimizer, loss_funct
     copy_model_gradients_to_master(model_parameters, master_parameters)
 
     for parameter in master_parameters:
-        parameter.grad.data.mul_(1./scale_factor)
+        parameter.grad.data.mul_(1./config.LOSS_SCALE_FACTOR)
 
     optimizer.step()
     copy_master_parameters_to_model(model_parameters, master_parameters)
