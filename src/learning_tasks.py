@@ -22,7 +22,7 @@ def generate_single_lable_memory_data(num_observations, sequence_length, time_de
         row[column] = signal
         labels[i] = signal - 1
 
-    return to_device(torch.from_numpy(data).float()), to_device(torch.from_numpy(labels).long())
+    return to_device(torch.from_numpy(data)), to_device(torch.from_numpy(labels))
 
 
 def generate_multi_lable_memory_data(num_observations, sequence_length, time_delta=None):
@@ -42,7 +42,7 @@ def generate_multi_lable_memory_data(num_observations, sequence_length, time_del
         labels[i, :-1] = 0
         labels[i, -1] = signal - 1
 
-    return to_device(torch.from_numpy(data).float()), to_device(torch.from_numpy(labels).long())
+    return to_device(torch.from_numpy(data)), to_device(torch.from_numpy(labels))
 
 
 def generate_store_and_recall_data(num_observations, sequence_length, recall_repetition=0, time_delta=None):
@@ -80,4 +80,4 @@ def generate_store_and_recall_data(num_observations, sequence_length, recall_rep
         data.append(np.hstack((row, store_signal[i], recall_signal[i])))
 
     data = np.array(data)
-    return to_device(torch.from_numpy(data).float()), to_device(torch.from_numpy(labels).long())
+    return to_device(torch.from_numpy(data)), to_device(torch.from_numpy(labels).long(), False)
