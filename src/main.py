@@ -7,11 +7,12 @@ import torch.optim as optim
 import time
 from datetime import datetime
 
-from util import to_device, prepare_parameter_lists, copy_master_parameters_to_model, copy_model_gradients_to_master
+from util import to_device#, prepare_parameter_lists, copy_master_parameters_to_model, copy_model_gradients_to_master
 from learning_tasks import generate_single_lable_memory_data, generate_store_and_recall_data
 import config
 
 import logging
+import amp
 
 STORE_RECALL = "S_R"
 MEMORY = "MEM"
@@ -39,20 +40,18 @@ def chose_task(memory_task, training_algorithm):
 
     if training_algorithm == BPTT:
         model_constructor = BPTT_LSTM
-        train_function = lambda model, model_parameters, master_parameters, optimizer, loss_func, batch_x, batch_y : train_bptt(model, model_parameters, master_parameters, optimizer, loss_func, batch_x, batch_y, memory_task)
+        train_function = lambda model, optimizer, loss_func, batch_x, batch_y : train_bptt(model, optimizer, loss_func, batch_x, batch_y, memory_task)
     elif training_algorithm == EPROP_1:
         model_constructor = EPROP1_LSTM
-        train_function = lambda model, model_parameters, master_parameters, optimizer, loss_func, batch_x, batch_y : train_bptt(model, model_parameters, master_parameters, optimizer, loss_func, batch_x, batch_y, memory_task)
+        train_function = lambda model, optimizer, loss_func, batch_x, batch_y : train_bptt(model, optimizer, loss_func, batch_x, batch_y, memory_task)
     elif training_algorithm == EPROP_3:
         model_constructor = lambda in_size, h_size, o_size, single_output : EPROP3_LSTM(
             in_size, 
             h_size, 
             o_size, 
             single_output=single_output)
-        train_function = lambda model, model_parameters, master_parameters, optimizer, loss_func, batch_x, batch_y : train_eprop3(
+        train_function = lambda model, optimizer, loss_func, batch_x, batch_y : train_eprop3(
             model,
-            model_parameters, 
-            master_parameters,
             optimizer, 
             loss_func, 
             batch_x, 
@@ -130,7 +129,7 @@ def test(model, loss_function, generate_data, size_test_data, sequence_length, m
 
             logging.info('Loss: {}'.format(loss))
 
-def train_eprop3(model, model_parameters, master_parameters, optimizer, loss_function, batch_x, batch_y, memory_task, truncation_delta):
+def train_eprop3(model, optimizer, loss_function, batch_x, batch_y, memory_task, truncation_delta):
     seq_len = batch_x.shape[1]
     loss_function_synth = nn.MSELoss()
 
@@ -151,9 +150,8 @@ def train_eprop3(model, model_parameters, master_parameters, optimizer, loss_fun
 
         pred, gt = format_pred_and_gt(prediction, first_batch_y, memory_task)  
         loss = loss_function(pred, gt)
-        scaled_loss = config.LOSS_SCALE_FACTOR * loss.float()
-        scaled_loss.backward()
-        copy_model_gradients_to_master(model_parameters, master_parameters)
+        with amp.scale_loss(loss, optimizer) as scaled_loss:
+            scaled_loss.backward()
 
         # select [t_{m}+1, ..., t_{m+1}] (the next truncated time interval)
         second_batch_x = batch_x[:,start:start+truncation_delta,:].clone()
@@ -167,9 +165,8 @@ def train_eprop3(model, model_parameters, master_parameters, optimizer, loss_fun
 
         pred, gt = format_pred_and_gt(prediction, second_batch_y, memory_task)    
         loss = loss_function(pred, gt) 
-        scaled_loss = config.LOSS_SCALE_FACTOR * loss.float()              
-        scaled_loss.backward()
-        copy_model_gradients_to_master(model_parameters, master_parameters)
+        with amp.scale_loss(loss, optimizer) as scaled_loss:
+            scaled_loss.backward()
 
         # ... and store it ...
         real_grad_x = second_initial_state.grad.detach()  
@@ -178,7 +175,6 @@ def train_eprop3(model, model_parameters, master_parameters, optimizer, loss_fun
         loss = loss_function_synth(first_synth_grad, real_grad_x)
         scaled_loss = config.LOSS_SCALE_FACTOR * loss.float()   
         scaled_loss.backward()
-        copy_model_gradients_to_master(model_parameters, master_parameters)
 
         real_grad_x_shape = real_grad_x.shape
 
@@ -186,16 +182,10 @@ def train_eprop3(model, model_parameters, master_parameters, optimizer, loss_fun
         if start+truncation_delta == seq_len:
             zeros = to_device(torch.zeros(real_grad_x_shape, requires_grad=False))
             loss = loss_function_synth(second_synth_grad, zeros)
-            scaled_loss = config.LOSS_SCALE_FACTOR * loss.float()   
-            scaled_loss.backward()
-            copy_model_gradients_to_master(model_parameters, master_parameters)
-
-        for parameter in master_parameters:
-            if parameter.grad is not None:
-                parameter.grad.data.mul_(1./config.LOSS_SCALE_FACTOR)
+            with amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
 
         optimizer.step()
-        copy_master_parameters_to_model(model_parameters, master_parameters)
 
     with torch.no_grad():
         prediction, _, _ = model(batch_x)
@@ -204,31 +194,27 @@ def train_eprop3(model, model_parameters, master_parameters, optimizer, loss_fun
 
     return loss.item()
 
-def train_bptt(model, model_parameters, master_parameters, optimizer, loss_function, batch_x, batch_y, memory_task):
+def train_bptt(model, optimizer, loss_function, batch_x, batch_y, memory_task):
     prediction = model(batch_x)
     prediction, gt = format_pred_and_gt(prediction, batch_y, memory_task)
     # Compute the loss, gradients, and update the parameters
     loss = loss_function(prediction, gt)
-    scaled_loss = config.LOSS_SCALE_FACTOR * loss.float()
     
     # reset gradient
     model.zero_grad()
     
-    scaled_loss.backward()
-    copy_model_gradients_to_master(model_parameters, master_parameters)
-
-    for parameter in master_parameters:
-        parameter.grad.data.mul_(1./config.LOSS_SCALE_FACTOR)
+    with amp.scale_loss(loss, optimizer) as scaled_loss:
+        scaled_loss.backward()
 
     optimizer.step()
-    copy_master_parameters_to_model(model_parameters, master_parameters)
     return loss.item()
 
 
 def train(model, generate_data, loss_function, train_func):
     # Use negative log-likelihood and ADAM for training
-    model_parameters, master_parameters = prepare_parameter_lists(model)
-    optimizer = optim.Adam(master_parameters, lr=config.LEARNING_RATE)
+    optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
+
+    model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
 
     # data generation is dependend on the training task
     train_X, train_Y = generate_data(config.TRAIN_SIZE, config.SEQ_LENGTH)
@@ -241,7 +227,7 @@ def train(model, generate_data, loss_function, train_func):
         batch_num = 0
 
         for batch_x, batch_y in get_batched_data(train_X, train_Y):
-            total_loss += train_func(model, model_parameters, master_parameters, optimizer, loss_function, batch_x, batch_y)
+            total_loss += train_func(model, optimizer, loss_function, batch_x, batch_y)
             batch_num += 1
 
         result = 'Epoch {} \t => Loss: {} [Batch-Time = {}s]'.format(epoch, total_loss / batch_num, round(time.time() - start_time, 2))
