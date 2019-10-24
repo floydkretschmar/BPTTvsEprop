@@ -20,13 +20,6 @@ class BaseNetwork(nn.Module):
     def get_name(self):
         return "BaseNetwork"
 
-    def save(self, path, epoch):
-        torch.save(self.state_dict(), '{}{}_{}.pth'.format(path, self.get_name(), epoch))
-
-    def load(self, path):
-        self.load_state_dict(torch.load('{}{}.pth'.format(path, self.get_name())))
-        self.eval()
-
 
 class BaseLSTM(BaseNetwork):
     def __init__(self, 

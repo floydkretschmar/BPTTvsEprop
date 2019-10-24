@@ -7,7 +7,7 @@ import torch.optim as optim
 import time
 from datetime import datetime
 
-from util import to_device#, prepare_parameter_lists, copy_master_parameters_to_model, copy_model_gradients_to_master
+from util import to_device, save_checkpoint, load_checkpoint
 from learning_tasks import generate_single_lable_memory_data, generate_store_and_recall_data
 import config
 
@@ -210,12 +210,7 @@ def train_bptt(model, optimizer, loss_function, batch_x, batch_y, memory_task):
     return loss.item()
 
 
-def train(model, generate_data, loss_function, train_func):
-    # Use negative log-likelihood and ADAM for training
-    optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
-
-    model, optimizer = amp.initialize(model, optimizer, opt_level="O0")
-
+def train(model, optimizer, generate_data, loss_function, train_func):
     # data generation is dependend on the training task
     train_X, train_Y = generate_data(config.TRAIN_SIZE, config.SEQ_LENGTH)
     training_results = []
@@ -235,7 +230,7 @@ def train(model, generate_data, loss_function, train_func):
         
         if epoch % 25 == 0:
             logging.info("Saved model")
-            model.save(config.SAVE_PATH, epoch)
+            save_checkpoint(model, optimizer, amp, epoch)
 
 
 if __name__ == '__main__':
@@ -248,12 +243,14 @@ if __name__ == '__main__':
     setup_logging(args)
 
     generate_data, model, loss_function, train_function = chose_task(args.memory_task, args.training_algorithm)
+    optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
+    model, optimizer = amp.initialize(model, optimizer, opt_level="O0")
 
     if args.test:
-        model.load(config.LOAD_PATH)
+        load_checkpoint(model, optimizer, amp)
 
     if not args.test:
-        train(model, generate_data, loss_function, train_function)
+        train(model, optimizer, generate_data, loss_function, train_function)
 
     test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH, args.memory_task)
     
