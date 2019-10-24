@@ -8,7 +8,6 @@ LEARNING_RATE = 0.01
 TRUNCATION_DELTA = 10
 SAVE_PATH = './models/save/'
 LOAD_PATH = './models/load/'
-LOSS_SCALE_FACTOR = 128
 
 # Memory Task parameters #
 MEM_INPUT_SIZE = 1

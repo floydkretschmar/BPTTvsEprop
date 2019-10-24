@@ -12,7 +12,7 @@ from learning_tasks import generate_single_lable_memory_data, generate_store_and
 import config
 
 import logging
-import amp
+import apex.amp as amp
 
 STORE_RECALL = "S_R"
 MEMORY = "MEM"
@@ -173,8 +173,8 @@ def train_eprop3(model, optimizer, loss_function, batch_x, batch_y, memory_task,
 
         # ... to optimize the synth grad network using MSE
         loss = loss_function_synth(first_synth_grad, real_grad_x)
-        scaled_loss = config.LOSS_SCALE_FACTOR * loss.float()   
-        scaled_loss.backward()
+        with amp.scale_loss(loss, optimizer) as scaled_loss:
+            scaled_loss.backward()
 
         real_grad_x_shape = real_grad_x.shape
 
@@ -214,7 +214,7 @@ def train(model, generate_data, loss_function, train_func):
     # Use negative log-likelihood and ADAM for training
     optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
 
-    model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
+    model, optimizer = amp.initialize(model, optimizer, opt_level="O0")
 
     # data generation is dependend on the training task
     train_X, train_Y = generate_data(config.TRAIN_SIZE, config.SEQ_LENGTH)

@@ -13,7 +13,8 @@ https://github.com/pytorch/benchmark/blob/master/rnns/fastrnns/custom_lstms.py
 """
 
 
-class LSTM(jit.ScriptModule):
+class LSTM(nn.Module):
+#class LSTM(jit.ScriptModule):
     def __init__(self, input_size, hidden_size, bias=True):
         super(LSTM, self).__init__()
         self.input_size = input_size
@@ -58,7 +59,7 @@ class BPTT_LSTM(LSTM):
 
         return torch.stack(outputs), cx
 
-    @jit.script_method
+    #@jit.script_method
     def cell(self, input, hx, cx):
         # net activations...
         gates = (torch.mm(input, self.weight_ih.t()) + self.bias_ih +
