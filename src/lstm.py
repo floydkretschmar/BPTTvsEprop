@@ -5,7 +5,7 @@ import torch.jit as jit
 import math
 
 from util import to_device
-from forget_gate_func import ForgetGate
+from autograd import ForgetGate
 
 """ 
 Custom LSTM implementation using jit adopted from:

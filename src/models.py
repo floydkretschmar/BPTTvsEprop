@@ -6,8 +6,7 @@ import math
 
 import lstm
 from util import to_device
-from eprop_func import EProp1, EProp3
-from synth_grad_func import SyntheticGradient
+from autograd import EProp1, EProp3, SyntheticGradient
 
 
 class BaseNetwork(nn.Module):
