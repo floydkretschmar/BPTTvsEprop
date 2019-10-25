@@ -9,6 +9,9 @@ TRUNCATION_DELTA = 10
 SAVE_PATH = './models/save/'
 LOAD_PATH = './models/load/'
 
+STORE_RECALL = "S_R"
+MEMORY = "MEM"
+
 # Memory Task parameters #
 MEM_INPUT_SIZE = 1
 MEM_HIDEN_SIZE = 32
