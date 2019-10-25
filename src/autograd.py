@@ -50,6 +50,12 @@ class ForgetGate(torch.autograd.Function):
 
 
 class EPropBase(torch.autograd.Function):
+    """
+    This is the base class for the autograd function that implements the Eprop algorithm. This
+    base class defines the forward pass including the default LSTM forward pass as well as the
+    calculation of the eligibility traces and vectors.
+    """
+
     @staticmethod
     def forward(
             ctx, 
@@ -142,16 +148,22 @@ class EPropBase(torch.autograd.Function):
         et_w_ih_y[:, (3 * hidden_size):(4 * hidden_size)] = base * input_data
         et_b_y[:, (3 * hidden_size):(4 * hidden_size)] = base
 
-        ctx.save_for_backward(et_w_ih_y, et_w_hh_y, et_b_y, hx.clone(), outgate)
+        ctx.save_for_backward(et_w_ih_y, et_w_hh_y, et_b_y, weight_hh, cx.clone().squeeze(), cy.clone().squeeze(), outgate.squeeze(), ingate.squeeze(), cellgate.squeeze(), forgetgate_y.squeeze())
 
         return hy, cy, ev_w_ih_y, ev_w_hh_y, ev_b_y, forgetgate_y
 
 
 class EProp1(EPropBase):
+    """
+    This is the autograd function that implements EProp1: This means we approximate the error gradient
+    dE/dz which is composed of the current error partialE/partialz and the backpropagated future error
+    by only using the current error.
+    """
+
     @staticmethod
     # grad_ev_ih and grad_ev_hh should always be None
     def backward(ctx, grad_hy, grad_cy, grad_ev_w_ih, grad_ev_w_hh, grad_ev_b, grad_forgetgate_y):
-        et_w_ih_y, et_w_hh_y, et_b_y, _, _ = ctx.saved_variables
+        et_w_ih_y, et_w_hh_y, et_b_y, _, _, _, _, _, _, _ = ctx.saved_variables
 
         # Approximate dE/dh by substituting only with local error (\partial E)/(\partial h)
         tmp_grad_hy = grad_hy.unsqueeze(2).repeat(1, 4, 1)
@@ -165,26 +177,54 @@ class EProp1(EPropBase):
 
 
 class EProp3(EPropBase):
+    """
+    This is the autograd function that implements EProp3: This means we no longer look at the entire time series,
+    but at truncated parts of length deltaT. Within these truncated parts we actually calculate the error gradient
+    dE/dz by adding the local error partialE/partialz to the backpropagated future error. Since we are truncating the
+    time series 
+    """
+
     @staticmethod
     # grad_ev_ih and grad_ev_hh should always be None
-    def backward(ctx, grad_hx, grad_cy, grad_ev_w_ih, grad_ev_w_hh, grad_ev_b, forgetgate_y):
-        et_w_ih_y, et_w_hh_y, et_b_y, hx, outgate = ctx.saved_variables
-        #print(forgetgate_y)
+    def backward(ctx, grad_hy, grad_cy, grad_ev_w_ih, grad_ev_w_hh, grad_ev_b, forgetgate_y):
+        # grad_hy = dE/dh^t = partial(E)/partial(h^{t}) + sum_i dE/dc^{t+1} * partial(c^{t+1})/partial(h^t) (the backpropagated error w.r.t. the output)
+        # grad_cy = dE/dc^{t+1} (the backpropagated error w.r.t. the next cell state)
 
-        # use local error grad_hy plus backpropagated error grad_cy where grad_cy is a synthetic gradient for
-        # the edges of the truncated propagation
-        ones = torch.ones_like(hx)
-        sig_deriv_state = torch.sigmoid(hx) * (ones - torch.sigmoid(hx))
+        et_w_ih_y, et_w_hh_y, et_b_y, weight_hh, cx, cy, outgate, ingate, cellgate, forgetgate_x,  = ctx.saved_variables
+        #print(grad_hy[0])
 
-        # just calculate backpropagated error for hidden connections
-        output_part = outgate.squeeze() * sig_deriv_state.squeeze() * grad_hx
+        # first calcualate the gradient of the current cell state dE/ds^{t} = putput_part + hidden_part where
+        # output_part = dE/dh^t * partial(h^t)/partial(c^t) = grad_hy * (outgate * sig_deriv_cy)
+        # hidden_part = dE/dc^{t+1} * partial(c^{t+1})/partial(c^t) = grad_cy * (forgetgate_y)
+        ones = torch.ones_like(cy)
+        sig_deriv_cy = torch.sigmoid(cy) * (ones - torch.sigmoid(cy))
+        output_part = outgate * sig_deriv_cy * grad_hy
         hidden_part = grad_cy * forgetgate_y.squeeze()
         grad_cx = output_part + hidden_part
-        temp_grad_cx = grad_cx.unsqueeze(2).repeat(1, 4, 1)
 
-        grad_weight_ih = et_w_ih_y * temp_grad_cx
-        grad_weight_hh = et_w_hh_y * temp_grad_cx
-        grad_bias = et_b_y * temp_grad_cx
+        # next calculate the gradient of the gates ...
+        tanh_deriv_cellgate = (ones - torch.sigmoid(cellgate)**2)
+        sig_deriv_ingate = torch.sigmoid(ingate) * (ones - torch.sigmoid(ingate))
+        sig_deriv_forgetgate = torch.sigmoid(forgetgate_x) * (ones - torch.sigmoid(forgetgate_x))
+        sig_deriv_outgate = torch.sigmoid(outgate) * (ones - torch.sigmoid(outgate))
+
+        grad_cellgate = grad_cx * tanh_deriv_cellgate * ingate
+        grad_ingate = grad_cx * sig_deriv_ingate * cellgate
+        grad_forgetgate_x = grad_cx * sig_deriv_forgetgate * cx
+        grad_outgate = grad_hy * sig_deriv_outgate * torch.tanh(cy)
+
+        # ... to finally calculate sum_i dE/dc^{t} * partial(c^{t})/partial(h^{t-1}) = grad_hx which will be added to the local error
+        # of the next backpropagation step
+        grad_gates = torch.cat([grad_ingate, grad_forgetgate_x, grad_cellgate, grad_outgate], dim=1) 
+        grad_hx = torch.matmul(weight_hh.t(), grad_gates).t()
+
+        # Calculate the gradient of the weights by multiplying the learning signal dE/dh^{t} = grad_hy with the
+        # eligibility traces calculated in the forward pass
+        temp_grad_hy = grad_hy.unsqueeze(2).repeat(1, 4, 1)
+
+        grad_weight_ih = et_w_ih_y * temp_grad_hy
+        grad_weight_hh = et_w_hh_y * temp_grad_hy
+        grad_bias = et_b_y * temp_grad_hy
 
         # grad_ev_ih, grad_ev_hh, grad_ev_b, grad_forgetgate_x, grad_input, grad_hx, grad_cx, grad_weight_ih, grad_weight_hh, grad_bias_ih, grad_bias_hh
-        return None, None, None, None, None, None, grad_cx, grad_weight_ih, grad_weight_hh, grad_bias.squeeze(), grad_bias.squeeze()
+        return None, None, None, None, None, grad_hx, grad_cx, grad_weight_ih, grad_weight_hh, grad_bias.squeeze(), grad_bias.squeeze()
