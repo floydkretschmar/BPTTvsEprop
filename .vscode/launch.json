@@ -6,7 +6,7 @@
     "cwd": "${workspaceRoot}",
     "configurations": [
         {
-            "name": "Train Memory Task",
+            "name": "Train Memory Task BPTT",
             "type": "python",
             "request": "launch",
             "program": "${workspaceRoot}/src/main.py",

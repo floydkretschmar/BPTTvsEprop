@@ -22,27 +22,7 @@ def generate_single_lable_memory_data(num_observations, sequence_length, time_de
         row[column] = signal
         labels[i] = signal - 1
 
-    return to_device(torch.from_numpy(data)), to_device(torch.from_numpy(labels))
-
-
-def generate_multi_lable_memory_data(num_observations, sequence_length, time_delta=None):
-    '''
-    Generates num_observations sequences of length sequence_length where the entire sequence is 
-    filled with 0s, except for one singular signal at a random position inside the sequence.
-    '''
-    size = ((num_observations, sequence_length, 1))
-    data = np.zeros(size)    
-    labels = np.zeros((num_observations, sequence_length))
-    for i, row in enumerate(data):
-        signal = np.random.randint(1, MEM_NUM_CLASSES, 1)
-        last_possible_signal = sequence_length if not time_delta else sequence_length - time_delta
-        column = np.random.randint(0, last_possible_signal, 1)
-        
-        row[column] = signal
-        labels[i, :-1] = 0
-        labels[i, -1] = signal - 1
-
-    return to_device(torch.from_numpy(data)), to_device(torch.from_numpy(labels))
+    return to_device(torch.from_numpy(data)), to_device(torch.from_numpy(labels).long())
 
 
 def generate_store_and_recall_data(num_observations, sequence_length, recall_repetition=0, time_delta=None):
