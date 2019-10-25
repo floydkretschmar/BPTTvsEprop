@@ -35,10 +35,10 @@ def chose_task(memory_task, training_algorithm):
 
     if training_algorithm == BPTT:
         model_constructor = BPTT_LSTM
-        train_function = lambda model, optimizer, amp, loss_func, batch_x, batch_y : train_bptt(model, optimizer, amp, loss_func, batch_x, batch_y, memory_task)
+        train_function = lambda model, optimizer, amp, loss_func, batch_x, batch_y : train_bptt(model, optimizer, amp, loss_func, batch_x, batch_y)
     elif training_algorithm == EPROP_1:
         model_constructor = EPROP1_LSTM
-        train_function = lambda model, optimizer, amp, loss_func, batch_x, batch_y : train_bptt(model, optimizer, amp, loss_func, batch_x, batch_y, memory_task)
+        train_function = lambda model, optimizer, amp, loss_func, batch_x, batch_y : train_bptt(model, optimizer, amp, loss_func, batch_x, batch_y)
     elif training_algorithm == EPROP_3:
         model_constructor = lambda in_size, h_size, o_size, single_output : EPROP3_LSTM(
             in_size, 
@@ -52,7 +52,6 @@ def chose_task(memory_task, training_algorithm):
             loss_func, 
             batch_x, 
             batch_y, 
-            memory_task, 
             config.TRUNCATION_DELTA)
     
     model = to_device(model_constructor(
@@ -96,14 +95,14 @@ def setup_logging(args):
     logging.info("Training algorithm: {}".format(ta))
 
 
-def test(model, loss_function, generate_data, size_test_data, sequence_length, memory_task):
+def test(model, loss_function, generate_data, size_test_data, sequence_length, single_output):
     logging.info('----------------- Started Testing -----------------')
     for delta in range(1, sequence_length):
         test_X, test_Y = generate_data(size_test_data, sequence_length, time_delta=delta)
         logging.info("Delta {}:".format(delta))
         with torch.no_grad():
             pred = model(test_X)
-            prediction, gt = format_pred_and_gt(pred, test_Y, args.memory_task)
+            prediction, gt = format_pred_and_gt(pred, test_Y, single_output)
             loss = loss_function(prediction, gt)
 
             logging.info('Loss: {}'.format(loss))
@@ -128,6 +127,6 @@ if __name__ == '__main__':
     if not args.test:
         train(model, optimizer, amp, generate_data, loss_function, train_function)
 
-    test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH, args.memory_task)
+    test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH, model.single_output)
     
     logging.info("----------------- Finished Run -----------------")

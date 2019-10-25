@@ -6,8 +6,8 @@ import time
 import config
 from util import save_checkpoint, to_device
 
-def format_pred_and_gt(pred, gt, memory_task):
-    if memory_task == config.STORE_RECALL:
+def format_pred_and_gt(pred, gt, single_output):
+    if not single_output:
         pred = pred.view(-1, pred.size(2))
         gt = gt.squeeze().flatten()
     else:
@@ -23,7 +23,7 @@ def get_batched_data(data, labels):
         yield data[indices], labels[indices]
 
 
-def train_eprop3(model, optimizer, amp, loss_function, batch_x, batch_y, memory_task, truncation_delta):
+def train_eprop3(model, optimizer, amp, loss_function, batch_x, batch_y, truncation_delta):
     seq_len = batch_x.shape[1]
     loss_function_synth = nn.MSELoss()
 
@@ -42,7 +42,7 @@ def train_eprop3(model, optimizer, amp, loss_function, batch_x, batch_y, memory_
         # simulate network over [t_{m-1}+1, ..., t_{m}] and backprop using the synthetic gradient
         prediction, _, first_synth_grad = model(first_batch_x)
 
-        pred, gt = format_pred_and_gt(prediction, first_batch_y, memory_task)  
+        pred, gt = format_pred_and_gt(prediction, first_batch_y, model.single_output)  
         loss = loss_function(pred, gt)
         with amp.scale_loss(loss, optimizer) as scaled_loss:
             scaled_loss.backward()
@@ -57,7 +57,7 @@ def train_eprop3(model, optimizer, amp, loss_function, batch_x, batch_y, memory_
         # retain grad of the initial hidden state of the second interval ...
         second_initial_state.retain_grad()
 
-        pred, gt = format_pred_and_gt(prediction, second_batch_y, memory_task)    
+        pred, gt = format_pred_and_gt(prediction, second_batch_y, model.single_output)    
         loss = loss_function(pred, gt) 
         with amp.scale_loss(loss, optimizer) as scaled_loss:
             scaled_loss.backward()
@@ -83,14 +83,14 @@ def train_eprop3(model, optimizer, amp, loss_function, batch_x, batch_y, memory_
 
     with torch.no_grad():
         prediction, _, _ = model(batch_x)
-        pred, gt = format_pred_and_gt(prediction, batch_y, memory_task)
+        pred, gt = format_pred_and_gt(prediction, batch_y, model.single_output)
         loss = loss_function(pred, gt)
 
     return loss.item()
 
-def train_bptt(model, optimizer, amp, loss_function, batch_x, batch_y, memory_task):
+def train_bptt(model, optimizer, amp, loss_function, batch_x, batch_y):
     prediction = model(batch_x)
-    prediction, gt = format_pred_and_gt(prediction, batch_y, memory_task)
+    prediction, gt = format_pred_and_gt(prediction, batch_y, model.single_output)
     # Compute the loss, gradients, and update the parameters
     loss = loss_function(prediction, gt)
     
