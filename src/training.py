@@ -23,7 +23,7 @@ def get_batched_data(data, labels):
         yield data[indices], labels[indices]
 
 
-def train_eprop3(model, optimizer, amp, loss_function, batch_x, batch_y, truncation_delta):
+def train_eprop3(model, optimizer, loss_function, batch_x, batch_y, truncation_delta):
     seq_len = batch_x.shape[1]
     loss_function_synth = nn.MSELoss()
 
@@ -44,8 +44,7 @@ def train_eprop3(model, optimizer, amp, loss_function, batch_x, batch_y, truncat
 
         pred, gt = format_pred_and_gt(prediction, first_batch_y, model.single_output)  
         loss = loss_function(pred, gt)
-        with amp.scale_loss(loss, optimizer) as scaled_loss:
-            scaled_loss.backward()
+        loss.backward()
 
         # select [t_{m}+1, ..., t_{m+1}] (the next truncated time interval)
         second_batch_x = batch_x[:,start:start+truncation_delta,:].clone()
@@ -59,16 +58,14 @@ def train_eprop3(model, optimizer, amp, loss_function, batch_x, batch_y, truncat
 
         pred, gt = format_pred_and_gt(prediction, second_batch_y, model.single_output)    
         loss = loss_function(pred, gt) 
-        with amp.scale_loss(loss, optimizer) as scaled_loss:
-            scaled_loss.backward()
+        loss.backward()
 
         # ... and store it ...
         real_grad_x = second_initial_state.grad.detach()  
 
         # ... to optimize the synth grad network using MSE
         loss = loss_function_synth(first_synth_grad, real_grad_x)
-        with amp.scale_loss(loss, optimizer) as scaled_loss:
-            scaled_loss.backward()
+        loss.backward()
 
         real_grad_x_shape = real_grad_x.shape
 
@@ -76,8 +73,7 @@ def train_eprop3(model, optimizer, amp, loss_function, batch_x, batch_y, truncat
         if start+truncation_delta == seq_len:
             zeros = to_device(torch.zeros(real_grad_x_shape, requires_grad=False))
             loss = loss_function_synth(second_synth_grad, zeros)
-            with amp.scale_loss(loss, optimizer) as scaled_loss:
-                scaled_loss.backward()
+            loss.backward()
 
         optimizer.step()
 
@@ -88,7 +84,7 @@ def train_eprop3(model, optimizer, amp, loss_function, batch_x, batch_y, truncat
 
     return loss.item()
 
-def train_bptt(model, optimizer, amp, loss_function, batch_x, batch_y):
+def train_bptt(model, optimizer, loss_function, batch_x, batch_y):
     prediction = model(batch_x)
     prediction, gt = format_pred_and_gt(prediction, batch_y, model.single_output)
     # Compute the loss, gradients, and update the parameters
@@ -97,14 +93,13 @@ def train_bptt(model, optimizer, amp, loss_function, batch_x, batch_y):
     # reset gradient
     model.zero_grad()
     
-    with amp.scale_loss(loss, optimizer) as scaled_loss:
-        scaled_loss.backward()
+    loss.backward()
 
     optimizer.step()
     return loss.item()
 
 
-def train(model, optimizer, amp, generate_data, loss_function, train_func):
+def train(model, optimizer, generate_data, loss_function, train_func):
     # data generation is dependend on the training task
     train_X, train_Y = generate_data(config.TRAIN_SIZE, config.SEQ_LENGTH)
     training_results = []
@@ -116,7 +111,7 @@ def train(model, optimizer, amp, generate_data, loss_function, train_func):
         batch_num = 0
 
         for batch_x, batch_y in get_batched_data(train_X, train_Y):
-            total_loss += train_func(model, optimizer, amp, loss_function, batch_x, batch_y)
+            total_loss += train_func(model, optimizer, loss_function, batch_x, batch_y)
             batch_num += 1
 
         result = 'Epoch {} \t => Loss: {} [Batch-Time = {}s]'.format(epoch, total_loss / batch_num, round(time.time() - start_time, 2))
@@ -124,4 +119,4 @@ def train(model, optimizer, amp, generate_data, loss_function, train_func):
         
         if epoch % 25 == 0:
             logging.info("Saved model")
-            save_checkpoint(model, optimizer, amp, epoch)
+            save_checkpoint(model, optimizer, epoch)

@@ -216,7 +216,7 @@ class EProp3(EPropBase):
         # ... to finally calculate sum_i dE/dc^{t} * partial(c^{t})/partial(h^{t-1}) = grad_hx which will be added to the local error
         # of the next backpropagation step
         grad_gates = torch.cat([grad_ingate, grad_forgetgate_x, grad_cellgate, grad_outgate], dim=1) 
-        grad_hx = torch.matmul(weight_hh.t(), grad_gates).t()
+        grad_hx = torch.matmul(weight_hh.t(), grad_gates.t()).t()
 
         # Calculate the gradient of the weights by multiplying the learning signal dE/dh^{t} = grad_hy with the
         # eligibility traces calculated in the forward pass

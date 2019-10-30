@@ -3,7 +3,6 @@ import logging
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import apex.amp as amp
 from datetime import datetime
 
 from models import BPTT_LSTM, EPROP1_LSTM, EPROP3_LSTM
@@ -35,20 +34,19 @@ def chose_task(memory_task, training_algorithm):
 
     if training_algorithm == BPTT:
         model_constructor = BPTT_LSTM
-        train_function = lambda model, optimizer, amp, loss_func, batch_x, batch_y : train_bptt(model, optimizer, amp, loss_func, batch_x, batch_y)
+        train_function = lambda model, optimizer, loss_func, batch_x, batch_y : train_bptt(model, optimizer, loss_func, batch_x, batch_y)
     elif training_algorithm == EPROP_1:
         model_constructor = EPROP1_LSTM
-        train_function = lambda model, optimizer, amp, loss_func, batch_x, batch_y : train_bptt(model, optimizer, amp, loss_func, batch_x, batch_y)
+        train_function = lambda model, optimizer, loss_func, batch_x, batch_y : train_bptt(model, optimizer, loss_func, batch_x, batch_y)
     elif training_algorithm == EPROP_3:
         model_constructor = lambda in_size, h_size, o_size, single_output : EPROP3_LSTM(
             in_size, 
             h_size, 
             o_size, 
             single_output=single_output)
-        train_function = lambda model, optimizer, amp, loss_func, batch_x, batch_y : train_eprop3(
+        train_function = lambda model, optimizer, loss_func, batch_x, batch_y : train_eprop3(
             model,
             optimizer, 
-            amp,
             loss_func, 
             batch_x, 
             batch_y, 
@@ -119,13 +117,12 @@ if __name__ == '__main__':
 
     generate_data, model, loss_function, train_function = chose_task(args.memory_task, args.training_algorithm)
     optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
-    model, optimizer = amp.initialize(model, optimizer, opt_level="O0")
 
     if args.test:
-        load_checkpoint(model, optimizer, amp)
+        load_checkpoint(model, optimizer)
 
     if not args.test:
-        train(model, optimizer, amp, generate_data, loss_function, train_function)
+        train(model, optimizer, generate_data, loss_function, train_function)
 
     test(model, loss_function, generate_data, config.TEST_SIZE, config.SEQ_LENGTH, model.single_output)
     
