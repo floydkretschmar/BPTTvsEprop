@@ -197,8 +197,8 @@ class EProp3(EPropBase):
         # output_part = dE/dh^t * partial(h^t)/partial(c^t) = grad_hy * (outgate * sig_deriv_cy)
         # hidden_part = dE/dc^{t+1} * partial(c^{t+1})/partial(c^t) = grad_cy * (forgetgate_y)
         ones = torch.ones_like(cy)
-        sig_deriv_cy = torch.sigmoid(cy) * (ones - torch.sigmoid(cy))
-        output_part = outgate * sig_deriv_cy * grad_hy
+        tanh_deriv_cy = (ones - torch.tanh(cy)**2)
+        output_part = outgate * tanh_deriv_cy * grad_hy
         hidden_part = grad_cy * forgetgate_y.squeeze()
         grad_cx = output_part + hidden_part
 

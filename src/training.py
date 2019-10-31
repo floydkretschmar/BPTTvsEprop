@@ -33,7 +33,7 @@ def train_eprop3(model, optimizer, loss_function, batch_x, batch_y, truncation_d
     # implementation of algo on page 33 of eprop paper
     for i, start in enumerate(range(truncation_delta, seq_len, truncation_delta)):
         # reset gradient
-        model.zero_grad()
+        optimizer.zero_grad()
 
         # select [t_{m-1}+1, ..., t_{m}]
         first_batch_x = batch_x[:,start-truncation_delta:start,:].clone()
@@ -91,7 +91,7 @@ def train_bptt(model, optimizer, loss_function, batch_x, batch_y):
     loss = loss_function(prediction, gt)
     
     # reset gradient
-    model.zero_grad()
+    optimizer.zero_grad()
     
     loss.backward()
 
